@@ -33,6 +33,12 @@ paths:
 - Searching in comments, strings, or disabled code
 - Pattern-based searches across the project
 
+## Prerequisites
+`compile_commands.json` must exist in the project. clangd-cli auto-detects it
+in the project root, `build/`, `out/Default/`, `out/Release/`, `out/Debug/`,
+or `.build/`. For other locations, add `--compile-commands-dir`:
+`clangd-cli --project-root <project-root> --compile-commands-dir <dir> start`
+
 ## Daemon lifecycle (IMPORTANT)
 The daemon MUST be started before running any command, and stopped when done.
 
@@ -193,6 +199,11 @@ clangd-cli file-symbols --file /path/to/file.cpp
 clangd-cli workspace-symbols --query MyClass
 clangd-cli switch-header-source --file /path/to/file.cpp
 ```
+
+## Prerequisites
+`compile_commands.json` must exist in the project. Auto-detected in project root,
+`build/`, `out/Default/`, `out/Release/`, `out/Debug/`, or `.build/`.
+For other locations: `clangd-cli --compile-commands-dir <dir> ...`
 
 ## Daemon lifecycle (IMPORTANT)
 The daemon MUST be started before running any command, and stopped when done.

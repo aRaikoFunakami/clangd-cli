@@ -172,9 +172,18 @@ def run_via_daemon(project_root: str, command: str, args) -> dict:
     return _send_to_socket(sock_path, {"command": command, "args": cmd_args})
 
 
+def _error_path(project_root: str) -> str:
+    h = hashlib.sha256(str(Path(project_root).resolve()).encode()).hexdigest()[:12]
+    return f"/tmp/clangd-cli-{h}.err"
+
+
 def daemon_start(project_root: str, args):
     if daemon_is_alive(project_root):
         return {"status": "already_running"}
+
+    err_path = _error_path(project_root)
+    if os.path.exists(err_path):
+        os.unlink(err_path)
 
     pid = os.fork()
     if pid > 0:
@@ -182,6 +191,11 @@ def daemon_start(project_root: str, args):
             time.sleep(0.1)
             if daemon_is_alive(project_root):
                 return {"status": "started", "pid": pid}
+        # Check if child wrote an error
+        if os.path.exists(err_path):
+            error_msg = Path(err_path).read_text().strip()
+            os.unlink(err_path)
+            return {"status": "error", "message": error_msg}
         return {"status": "start_timeout", "pid": pid}
     else:
         os.setsid()
@@ -197,7 +211,7 @@ def daemon_start(project_root: str, args):
                 timeout=args.timeout,
             )
         except Exception as e:
-            sys.stderr.write(f"Daemon error: {e}\n")
+            Path(_error_path(project_root)).write_text(str(e))
         os._exit(0)
 
 

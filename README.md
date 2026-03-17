@@ -16,6 +16,30 @@ cd clangd-cli
 uv tool install -e .
 ```
 
+## Prerequisites
+
+clangd-cli requires `compile_commands.json` in your project. Generate it for your build system:
+
+```bash
+# CMake
+cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+# → creates build/compile_commands.json
+
+# Make (using Bear)
+bear -- make
+# → creates compile_commands.json
+
+# Meson
+meson setup build
+# → creates build/compile_commands.json
+```
+
+clangd-cli auto-detects `compile_commands.json` in the project root, `build/`, `out/Default/`, `out/Release/`, `out/Debug/`, or `.build/`. For other locations, use `--compile-commands-dir`:
+
+```bash
+clangd-cli --project-root /path/to/project --compile-commands-dir /path/to/dir start
+```
+
 ## Usage
 
 ```bash

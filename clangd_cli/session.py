@@ -33,6 +33,12 @@ class ClangdSession:
 
         if not compile_commands_dir:
             compile_commands_dir = _find_compile_commands(self.project_root)
+        if not compile_commands_dir:
+            raise RuntimeError(
+                f"compile_commands.json not found under '{self.project_root}'. "
+                "Generate it for your build system (e.g. cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON, "
+                "bear -- make) or specify --compile-commands-dir."
+            )
 
         args = [clangd_path]
         if index_file:
