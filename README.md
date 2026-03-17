@@ -20,12 +20,20 @@ uv tool install -e .
 
 ```bash
 # Start daemon (fast - clangd stays running)
-clangd-cli start
-clangd-cli hover FILE LINE COL
-clangd-cli stop
+clangd-cli --project-root /path/to/project start
+clangd-cli --project-root /path/to/project hover --file /path/to/file.cpp --line 10 --col 5
+clangd-cli --project-root /path/to/project stop
 
 # One-shot mode (no setup needed)
-clangd-cli --oneshot hover FILE LINE COL
+clangd-cli --oneshot hover --file /path/to/file.cpp --line 10 --col 5
 ```
 
-All line/column numbers are 0-indexed (matching LSP protocol).
+All `--line` / `--col` values are 0-indexed (matching LSP protocol).
+
+## Install AI assistant instructions
+
+Generate Claude Code and GitHub Copilot instruction files for a C++ project:
+
+```bash
+clangd-cli --project-root /path/to/project install
+```

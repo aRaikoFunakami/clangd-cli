@@ -6,22 +6,46 @@ from pathlib import Path
 from .session import ClangdSession
 from .commands import COMMAND_MAP
 from .daemon import daemon_start, daemon_stop, daemon_status, daemon_is_alive, run_via_daemon
+from .install import install_instructions
 
 
 def _add_pos(parser):
-    parser.add_argument("file", help="Absolute path to the source file")
-    parser.add_argument("line", type=int, help="Line number (0-indexed)")
-    parser.add_argument("column", type=int, help="Column number (0-indexed)")
+    parser.add_argument("--file", required=True, help="Absolute path to the source file")
+    parser.add_argument("--line", type=int, required=True, help="Line number (0-indexed)")
+    parser.add_argument("--col", type=int, required=True, dest="column",
+                        help="Column number (0-indexed)")
 
 
 def _add_file(parser):
-    parser.add_argument("file", help="Absolute path to the source file")
+    parser.add_argument("--file", required=True, help="Absolute path to the source file")
+
+
+_DESCRIPTION = """\
+CLI wrapper around clangd LSP capabilities.
+
+Daemon lifecycle (start the daemon before running commands):
+  1. clangd-cli --project-root <dir> start
+  2. clangd-cli --project-root <dir> <command> --file <path> --line <n> --col <n>
+  3. clangd-cli --project-root <dir> stop
+
+Named arguments (--file, --line, --col can be in any order):
+  --file   absolute path to the source file
+  --line   line number (0-indexed)
+  --col    column number (0-indexed)
+
+Example session:
+  clangd-cli --project-root /home/user/proj start
+  clangd-cli --project-root /home/user/proj hover --file /home/user/proj/src/main.cpp --line 10 --col 5
+  clangd-cli --project-root /home/user/proj impact-analysis --file /home/user/proj/src/main.cpp --line 10 --col 5
+  clangd-cli --project-root /home/user/proj stop
+"""
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="CLI wrapper around clangd LSP capabilities",
+        description=_DESCRIPTION,
         prog="clangd-cli",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--project-root", default=".",
                         help="Project root directory (default: cwd)")
@@ -42,6 +66,10 @@ def build_parser():
     sub.add_parser("start", help="Start clangd daemon in background")
     sub.add_parser("stop", help="Stop clangd daemon")
     sub.add_parser("status", help="Check if daemon is running")
+
+    # Install AI assistant instructions
+    sub.add_parser("install",
+                   help="Install Claude Code / GitHub Copilot instruction files")
 
     # Analysis
     p = sub.add_parser("hover", help="Get hover information")
@@ -82,7 +110,7 @@ def build_parser():
     _add_file(p)
 
     p = sub.add_parser("workspace-symbols", help="Search workspace symbols")
-    p.add_argument("query", help="Symbol search query")
+    p.add_argument("--query", required=True, help="Symbol search query")
     p.add_argument("--limit", type=int, default=100)
 
     for name in ["call-hierarchy-in", "call-hierarchy-out",
@@ -137,6 +165,11 @@ def main():
 
     if args.command == "status":
         result = daemon_status(project_root)
+        print(json.dumps(result, indent=2))
+        return
+
+    if args.command == "install":
+        result = install_instructions(project_root)
         print(json.dumps(result, indent=2))
         return
 
