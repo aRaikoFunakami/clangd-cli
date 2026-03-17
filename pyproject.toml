@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "clangd-cli"
+version = "0.1.0"
+description = "CLI wrapper around clangd's LSP capabilities"
+requires-python = ">=3.9"
+license = "MIT"
+
+[project.scripts]
+clangd-cli = "clangd_cli.cli:main"

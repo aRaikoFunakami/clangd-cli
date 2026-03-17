@@ -1,0 +1,173 @@
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from .session import ClangdSession
+from .commands import COMMAND_MAP
+from .daemon import daemon_start, daemon_stop, daemon_status, daemon_is_alive, run_via_daemon
+
+
+def _add_pos(parser):
+    parser.add_argument("file", help="Absolute path to the source file")
+    parser.add_argument("line", type=int, help="Line number (0-indexed)")
+    parser.add_argument("column", type=int, help="Column number (0-indexed)")
+
+
+def _add_file(parser):
+    parser.add_argument("file", help="Absolute path to the source file")
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        description="CLI wrapper around clangd LSP capabilities",
+        prog="clangd-cli",
+    )
+    parser.add_argument("--project-root", default=".",
+                        help="Project root directory (default: cwd)")
+    parser.add_argument("--index-file",
+                        help="Path to clangd index file (.idx)")
+    parser.add_argument("--compile-commands-dir",
+                        help="Directory containing compile_commands.json")
+    parser.add_argument("--clangd-path", default="clangd",
+                        help="Path to clangd binary (default: clangd)")
+    parser.add_argument("--timeout", type=float, default=30.0,
+                        help="LSP request timeout in seconds (default: 30)")
+    parser.add_argument("--oneshot", action="store_true",
+                        help="Run without daemon (spawn clangd per command)")
+
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    # Daemon lifecycle
+    sub.add_parser("start", help="Start clangd daemon in background")
+    sub.add_parser("stop", help="Stop clangd daemon")
+    sub.add_parser("status", help="Check if daemon is running")
+
+    # Analysis
+    p = sub.add_parser("hover", help="Get hover information")
+    _add_pos(p)
+
+    p = sub.add_parser("diagnostics", help="Get file diagnostics")
+    _add_file(p)
+
+    p = sub.add_parser("inlay-hints", help="Get inlay hints")
+    _add_file(p)
+    p.add_argument("--range", help="Line range START:END (0-indexed)")
+
+    p = sub.add_parser("semantic-tokens", help="Get semantic tokens")
+    _add_file(p)
+    p.add_argument("--range", help="Line range START:END (0-indexed)")
+
+    p = sub.add_parser("ast", help="Get AST node at position")
+    _add_pos(p)
+    p.add_argument("--depth", type=int, help="Max depth of AST children")
+
+    # Navigation
+    for name in ["goto-definition", "goto-declaration",
+                  "goto-implementation", "goto-type-definition"]:
+        p = sub.add_parser(name, help=f"{name.replace('-', ' ').title()}")
+        _add_pos(p)
+
+    p = sub.add_parser("find-references", help="Find all references")
+    _add_pos(p)
+    p.add_argument("--no-declaration", action="store_true",
+                   help="Exclude declaration from results")
+
+    p = sub.add_parser("switch-header-source",
+                       help="Switch between header and source file")
+    _add_file(p)
+
+    # Symbols
+    p = sub.add_parser("file-symbols", help="List document symbols")
+    _add_file(p)
+
+    p = sub.add_parser("workspace-symbols", help="Search workspace symbols")
+    p.add_argument("query", help="Symbol search query")
+    p.add_argument("--limit", type=int, default=100)
+
+    for name in ["call-hierarchy-in", "call-hierarchy-out",
+                  "type-hierarchy-super", "type-hierarchy-sub"]:
+        p = sub.add_parser(name, help=f"{name.replace('-', ' ').title()}")
+        _add_pos(p)
+
+    # Structure
+    p = sub.add_parser("highlight-symbol", help="Get document highlights")
+    _add_pos(p)
+
+    p = sub.add_parser("document-links", help="Get document links")
+    _add_file(p)
+
+    # Composite
+    p = sub.add_parser("impact-analysis",
+                       help="Recursive caller trace with lambda detection")
+    _add_pos(p)
+    p.add_argument("--max-depth", type=int, default=5,
+                   help="Maximum BFS depth (default: 5)")
+    p.add_argument("--max-nodes", type=int, default=100,
+                   help="Maximum number of caller nodes (default: 100)")
+    p.add_argument("--include-virtual", action="store_true",
+                   help="Include virtual dispatch targets via type hierarchy")
+
+    p = sub.add_parser("describe",
+                       help="Symbol overview: type, references, callers, callees")
+    _add_pos(p)
+    p.add_argument("--no-callers", action="store_true",
+                   help="Skip incoming callers")
+    p.add_argument("--no-callees", action="store_true",
+                   help="Skip outgoing callees")
+
+    return parser
+
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+    project_root = str(Path(args.project_root).resolve())
+
+    # Daemon lifecycle commands
+    if args.command == "start":
+        result = daemon_start(project_root, args)
+        print(json.dumps(result))
+        return
+
+    if args.command == "stop":
+        result = daemon_stop(project_root)
+        print(json.dumps(result))
+        return
+
+    if args.command == "status":
+        result = daemon_status(project_root)
+        print(json.dumps(result, indent=2))
+        return
+
+    # LSP commands
+    if args.oneshot:
+        session = None
+        try:
+            session = ClangdSession(
+                project_root=project_root,
+                index_file=args.index_file,
+                compile_commands_dir=args.compile_commands_dir,
+                clangd_path=args.clangd_path,
+                timeout=args.timeout,
+            )
+            result = COMMAND_MAP[args.command](session, args)
+            print(json.dumps(result, indent=2))
+        except Exception as e:
+            print(json.dumps({"error": True, "message": str(e)}), file=sys.stderr)
+            sys.exit(1)
+        finally:
+            if session:
+                session.shutdown()
+    else:
+        if not daemon_is_alive(project_root):
+            print(json.dumps({"error": True,
+                               "message": "Daemon not running. Use 'start' first or add --oneshot."}),
+                  file=sys.stderr)
+            sys.exit(1)
+        try:
+            result = run_via_daemon(project_root, args.command, args)
+            print(json.dumps(result, indent=2))
+        except Exception as e:
+            print(json.dumps({"error": True, "message": str(e)}), file=sys.stderr)
+            sys.exit(1)
