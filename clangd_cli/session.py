@@ -19,8 +19,8 @@ def _find_compile_commands(project_root: str) -> str | None:
     ]
     for candidate in candidates:
         p = Path(project_root) / candidate
-        if p.is_file():
-            return str(p)
+        if p.exists():
+            return str(p.parent)
     return None
 
 
@@ -48,7 +48,7 @@ def _load_config(project_root: str) -> dict:
 
 class ClangdSession:
     def __init__(self, project_root: str, index_file: str = None,
-                 compile_commands: str = None, clangd_path: str = "clangd",
+                 compile_commands_dir: str = None, clangd_path: str = "clangd",
                  timeout: float = 30.0, background_index: bool = True):
         self.project_root = str(Path(project_root).resolve())
         self._opened_files = set()
@@ -65,19 +65,18 @@ class ClangdSession:
             index_file = str(Path(self.project_root) / index_file)
         self.index_file = index_file
 
-        if not compile_commands:
-            compile_commands = config.get("compile_commands") or None
-        if not compile_commands:
-            compile_commands = _find_compile_commands(self.project_root)
-        if compile_commands and not os.path.isabs(compile_commands):
-            compile_commands = str(Path(self.project_root) / compile_commands)
-        if not compile_commands:
+        if not compile_commands_dir:
+            compile_commands_dir = config.get("compile_commands_dir") or None
+        if not compile_commands_dir:
+            compile_commands_dir = _find_compile_commands(self.project_root)
+        if compile_commands_dir and not os.path.isabs(compile_commands_dir):
+            compile_commands_dir = str(Path(self.project_root) / compile_commands_dir)
+        if not compile_commands_dir:
             raise RuntimeError(
                 f"compile_commands.json not found under '{self.project_root}'. "
                 "Generate it for your build system (e.g. cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON, "
-                "bear -- make) or specify --compile-commands."
+                "bear -- make) or specify --compile-commands-dir."
             )
-        self.compile_commands = compile_commands
 
         if clangd_path == "clangd":
             clangd_path = config.get("clangd_path", clangd_path)
@@ -90,8 +89,8 @@ class ClangdSession:
         args = [clangd_path]
         if index_file:
             args.append(f"--index-file={index_file}")
-        if compile_commands:
-            args.append(f"--compile-commands-dir={str(Path(compile_commands).parent)}")
+        if compile_commands_dir:
+            args.append(f"--compile-commands-dir={compile_commands_dir}")
         if background_index:
             args.append("--background-index")
         else:

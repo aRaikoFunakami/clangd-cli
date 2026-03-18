@@ -28,10 +28,10 @@ meson setup build
 # → creates build/compile_commands.json
 ```
 
-clangd-cli auto-detects `compile_commands.json` in the project root, `build/`, `out/Default/`, `out/Release/`, `out/Debug/`, or `.build/`. For other locations, use `--compile-commands`:
+clangd-cli auto-detects `compile_commands.json` in the project root, `build/`, `out/Default/`, `out/Release/`, `out/Debug/`, or `.build/`. For other locations, use `--compile-commands-dir`:
 
 ```bash
-clangd-cli --project-root /path/to/project --compile-commands /path/to/compile_commands.json start
+clangd-cli --project-root /path/to/project --compile-commands-dir /path/to/dir start
 ```
 
 ## Usage

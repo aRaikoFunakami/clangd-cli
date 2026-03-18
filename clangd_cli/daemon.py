@@ -88,7 +88,7 @@ def _handle_connection(conn: socket.socket, session: ClangdSession,
     conn.sendall(len(payload).to_bytes(4, "big") + payload)
 
 
-def daemon_main(project_root: str, index_file: str, compile_commands: str,
+def daemon_main(project_root: str, index_file: str, compile_commands_dir: str,
                 clangd_path: str, timeout: float):
     sock_path = _socket_path(project_root)
     pid_path = _pid_path(project_root)
@@ -99,7 +99,7 @@ def daemon_main(project_root: str, index_file: str, compile_commands: str,
     session = ClangdSession(
         project_root=project_root,
         index_file=index_file,
-        compile_commands=compile_commands,
+        compile_commands_dir=compile_commands_dir,
         clangd_path=clangd_path,
         timeout=timeout,
         background_index=True,
@@ -166,7 +166,7 @@ def daemon_is_alive(project_root: str) -> bool:
 
 def run_via_daemon(project_root: str, command: str, args) -> dict:
     sock_path = _socket_path(project_root)
-    GLOBAL_KEYS = {"project_root", "index_file", "compile_commands",
+    GLOBAL_KEYS = {"project_root", "index_file", "compile_commands_dir",
                    "clangd_path", "timeout", "oneshot", "command"}
     cmd_args = {k: v for k, v in vars(args).items()
                 if k not in GLOBAL_KEYS and v is not None}
@@ -187,9 +187,9 @@ def daemon_start(project_root: str, args):
     resolved_index = (args.index_file
                       or config.get("index_file") or None
                       or _find_index_file(project_root))
-    resolved_cc = (args.compile_commands
-                   or config.get("compile_commands") or None
-                   or _find_compile_commands(project_root))
+    resolved_ccd = (args.compile_commands_dir
+                    or config.get("compile_commands_dir") or None
+                    or _find_compile_commands(project_root))
 
     err_path = _error_path(project_root)
     if os.path.exists(err_path):
@@ -210,8 +210,8 @@ def daemon_start(project_root: str, args):
                         "clangd-cli --project-root <dir> --index-file <path> start  "
                         "Or add it to .clangd-cli.json: {\"index_file\": \"<path>\"}"
                     )
-                if resolved_cc:
-                    result["compile_commands"] = resolved_cc
+                if resolved_ccd:
+                    result["compile_commands_dir"] = resolved_ccd
                 return result
         # Check if child wrote an error
         if os.path.exists(err_path):
@@ -228,7 +228,7 @@ def daemon_start(project_root: str, args):
             daemon_main(
                 project_root=project_root,
                 index_file=args.index_file,
-                compile_commands=args.compile_commands,
+                compile_commands_dir=args.compile_commands_dir,
                 clangd_path=args.clangd_path,
                 timeout=args.timeout,
             )
