@@ -24,6 +24,8 @@ paths:
 # clangd-cli Usage Guide
 
 ## When to use clangd-cli (instead of grep)
+- Locating a symbol by name: `workspace-symbols --query <name>` returns file/line/col
+  — use this instead of grep to find where a function or class is defined
 - Tracing callers of a function with a common name (draw, get, set, etc.)
 - Finding all references to a specific symbol (not just text matches)
 - Understanding type hierarchies and virtual dispatch
@@ -31,9 +33,8 @@ paths:
 - Impact analysis before modifying a function signature
 
 ## When grep is sufficient
-- Searching for unique function/variable names
-- Searching in comments, strings, or disabled code
-- Pattern-based searches across the project
+- Searching for text in comments, strings, or disabled code
+- Pattern-based searches across the project (regex)
 
 ## Prerequisites
 `compile_commands.json` must exist in the project. clangd-cli auto-detects it
@@ -154,12 +155,13 @@ Use this skill when asked to:
 - Understand class hierarchies
 
 ## Decision flow
-1. Need impact analysis / caller trace? → `impact-analysis`
-2. Need symbol overview (type, callers, callees)? → `describe`
-3. Is the symbol name unique? → grep is faster
-4. Is the name common (draw, get, set)? → use clangd-cli
-5. Need type info for auto/template? → `describe` or `hover`
-6. Need exhaustive caller list? → `impact-analysis`
+1. Don't know the file/line/col of the symbol? → `workspace-symbols --query <name>` to locate it first
+2. Need impact analysis / caller trace? → `impact-analysis`
+3. Need symbol overview (type, callers, callees)? → `describe`
+4. Is the symbol name unique and you just need the source text? → grep is faster
+5. Is the name common (draw, get, set)? → use clangd-cli
+6. Need type info for auto/template? → `describe` or `hover`
+7. Need exhaustive caller list? → `impact-analysis`
 
 ## Command syntax
 All commands use named arguments: `--file <path> --line <n> --col <n>`
@@ -167,8 +169,8 @@ All commands use named arguments: `--file <path> --line <n> --col <n>`
 Example:
 ```
 clangd-cli --project-root . start
+clangd-cli --project-root . workspace-symbols --query OnThemeChanged
 clangd-cli --project-root . impact-analysis --file src/main.cpp --line 10 --col 5
-clangd-cli --project-root . describe --file src/main.cpp --line 10 --col 5
 clangd-cli --project-root . stop
 ```
 
@@ -211,6 +213,7 @@ All commands use named arguments (`--file`, `--line`, `--col`).
 Line and column are 0-indexed.
 
 ## When to use (instead of grep)
+- Locate a symbol: `clangd-cli workspace-symbols --query <name>` — find file/line/col by name
 - Impact analysis: `clangd-cli impact-analysis --file <path> --line <n> --col <n>` — recursive caller trace
 - Symbol overview: `clangd-cli describe --file <path> --line <n> --col <n>` — type + callers + callees
 - Common names: draw, get, set, create, handle, update, etc.
