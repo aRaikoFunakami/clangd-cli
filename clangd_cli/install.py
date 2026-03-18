@@ -6,34 +6,9 @@ from pathlib import Path
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
-_SKILL_SCHEMA_COMMANDS: list[str] = []
-
 
 def _read_template(name: str) -> str:
     return (_TEMPLATES_DIR / name).read_text()
-
-
-def _generate_schema_doc() -> str:
-    """Generate output schema documentation for embedding in skill files."""
-    from .models import get_command_schemas
-
-    schemas = get_command_schemas()
-    lines = [
-        "## Output schemas",
-        "",
-        "Get JSON Schema for all commands: `clangd-cli schema`",
-        "Get schema for a specific command: `clangd-cli schema --command <name>`",
-    ]
-    for cmd_name in _SKILL_SCHEMA_COMMANDS:
-        if cmd_name in schemas:
-            lines.append("")
-            lines.append(f"### `{cmd_name}`")
-            lines.append("")
-            lines.append("```json")
-            lines.append(json.dumps(schemas[cmd_name], indent=2))
-            lines.append("```")
-    lines.append("")
-    return "\n".join(lines)
 
 
 FILES = [
@@ -119,16 +94,11 @@ def install_instructions(project_root: str, interactive: bool = False) -> dict:
     skipped = []
     settings_result = {}
 
-    # Generate schema documentation for $ARGUMENTS substitution
-    schema_doc = _generate_schema_doc()
-
     # Files that are always written (overwrite)
     for rel_path, template_name in FILES:
         path = root / rel_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        content = _read_template(template_name)
-        content = content.replace("$ARGUMENTS", schema_doc)
-        path.write_text(content)
+        path.write_text(_read_template(template_name))
         created.append(rel_path)
 
     # Files that are created only if they don't exist

@@ -4,64 +4,36 @@ applyTo: "**/*.{cpp,cc,h,hh}"
 
 # clangd-cli for C++ Navigation
 
-## Quick reference
-```
-clangd-cli <command> [args]
-```
+**Always check `--help` before running a command you are unsure about.**
 
-Composite: impact-analysis, describe
-Navigation: hover, goto-definition, goto-declaration, goto-type-definition,
-goto-implementation, find-references, switch-header-source
-Symbols: file-symbols, workspace-symbols, call-hierarchy-in, call-hierarchy-out,
-type-hierarchy-sub, type-hierarchy-super
-Structure: highlight-symbol, document-links, ast, diagnostics, inlay-hints,
-semantic-tokens
-
-## Named arguments
-All commands use named arguments (`--file`, `--line`, `--col`).
-Line and column are 0-indexed.
+```
+clangd-cli --help                        # list all commands and global options
+clangd-cli <command> --help              # show command-specific arguments
+clangd-cli schema --command <name>       # JSON Schema of command output
+```
 
 ## When to use (instead of grep)
-- Locate a symbol: `clangd-cli workspace-symbols --query <name>` — find file/line/col by name
-- Impact analysis: `clangd-cli impact-analysis --file <path> --line <n> --col <n>` — recursive caller trace + callees + virtual dispatch
-- Override list: `clangd-cli goto-implementation --file <path> --line <n> --col <n>` — find all overrides of a virtual method
-- Symbol overview: `clangd-cli describe --file <path> --line <n> --col <n>` — type + callers + callees
+- Locate a symbol: `workspace-symbols --query <name>` — find file/line/col by name
+- Impact analysis: `impact-analysis` — recursive caller trace + callees + virtual dispatch
+- Override list: `goto-implementation` — find all overrides of a virtual method
+- Symbol overview: `describe` — type + callers + callees
 - Common names: draw, get, set, create, handle, update, etc.
 - Type queries: what type is this auto variable?
 - Class hierarchies: what implements this interface?
 
-**Note**: Do not issue Grep in parallel as a fallback for structural queries that clangd-cli handles (overrides, callers, references).
-
-## Command examples
-```
-clangd-cli impact-analysis --file /path/to/file.cpp --line 10 --col 5
-clangd-cli describe --file /path/to/file.cpp --line 10 --col 5
-clangd-cli goto-definition --file /path/to/file.cpp --line 10 --col 5
-clangd-cli hover --file /path/to/file.cpp --line 10 --col 5
-clangd-cli file-symbols --file /path/to/file.cpp
-clangd-cli workspace-symbols --query MyClass
-clangd-cli switch-header-source --file /path/to/file.cpp
-```
+**Do not issue Grep in parallel as a fallback** for structural queries that clangd-cli handles.
 
 ## Prerequisites
 `compile_commands.json` must exist in the project. Auto-detected in project root,
 `build/`, `out/Default/`, `out/Release/`, `out/Debug/`, or `.build/`.
-For other locations: `clangd-cli --compile-commands-dir <dir> ...`
+For other locations, use `--compile-commands-dir`.
 
 ## Configuration
-Project settings in `.clangd-cli.json` (project root): index_file,
-compile_commands_dir, clangd_path, timeout, background_index.
-Priority: CLI args > .clangd-cli.json > auto-detection.
+Project settings in `.clangd-cli.json` (project root).
 Run `clangd-cli install` to generate a sample config.
+Priority: CLI args > .clangd-cli.json > auto-detection.
 
 ## Daemon lifecycle (IMPORTANT)
 - **Do NOT call `start` or `stop` unless the user explicitly asks.** The daemon auto-starts when any command is executed.
-- `start` should be run **beforehand** by the user or explicitly requested by the user, because index loading can take significant time.
 - If the user asks to start or stop the daemon, do so.
-- If a command returns incomplete results (e.g., empty callers), the index may not be ready yet. Suggest the user run `clangd-cli --project-root <dir> start --wait` and retry.
-
-Example session:
-```
-clangd-cli --project-root /home/user/myproject hover --file /home/user/myproject/src/main.cpp --line 10 --col 5
-clangd-cli --project-root /home/user/myproject find-references --file /home/user/myproject/src/main.cpp --line 10 --col 5
-```
+- If a command returns incomplete results (e.g., empty callers), the index may not be ready yet. Suggest the user run `clangd-cli start --wait` and retry.
