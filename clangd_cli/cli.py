@@ -150,6 +150,8 @@ def build_parser():
                    help="Maximum number of caller nodes (default: 100)")
     p.add_argument("--include-virtual", action="store_true",
                    help="Include virtual dispatch targets via type hierarchy")
+    p.add_argument("--no-callees", action="store_true",
+                   help="Skip outgoing callees from root")
 
     p = sub.add_parser("describe",
                        help="Symbol overview: type, references, callers, callees")
