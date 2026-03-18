@@ -63,6 +63,11 @@ def format_document_symbol(sym: dict) -> dict:
     return result
 
 
+def format_call_sites(ranges: list) -> list:
+    return [{"line": r["start"]["line"], "column": r["start"]["character"]}
+            for r in ranges]
+
+
 def count_symbols(symbols: list) -> int:
     count = len(symbols)
     for sym in symbols:

@@ -1,6 +1,6 @@
 from ..uri import uri_to_path
 from ..constants import SYMBOL_KIND_NAMES
-from ..formatters import format_hierarchy_item, format_document_symbol, count_symbols
+from ..formatters import format_hierarchy_item, format_document_symbol, format_call_sites, count_symbols
 
 
 def cmd_file_symbols(session, args):
@@ -72,10 +72,7 @@ def cmd_call_hierarchy_in(session, args):
     for call in incoming:
         entry = format_hierarchy_item(call["from"])
         entry["caller"] = entry.pop("name")
-        entry["call_sites"] = [
-            {"line": r["start"]["line"], "column": r["start"]["character"]}
-            for r in call.get("fromRanges", [])
-        ]
+        entry["call_sites"] = format_call_sites(call.get("fromRanges", []))
         fmt_in.append(entry)
 
     result = {
@@ -98,10 +95,7 @@ def cmd_call_hierarchy_out(session, args):
     for call in outgoing:
         entry = format_hierarchy_item(call["to"])
         entry["callee"] = entry.pop("name")
-        entry["call_sites"] = [
-            {"line": r["start"]["line"], "column": r["start"]["character"]}
-            for r in call.get("fromRanges", [])
-        ]
+        entry["call_sites"] = format_call_sites(call.get("fromRanges", []))
         fmt_out.append(entry)
 
     result = {

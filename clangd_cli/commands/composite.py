@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ..uri import uri_to_path, path_to_uri
 from ..constants import SYMBOL_KIND_NAMES
-from ..formatters import format_hierarchy_item, format_location, normalize_locations
+from ..formatters import format_hierarchy_item, format_call_sites, format_location, normalize_locations
 
 _CPP_KEYWORDS = frozenset({
     "void", "bool", "char", "short", "int", "long", "float", "double",
@@ -140,10 +140,7 @@ def _explore_virtual_dispatch(session, root_item, uri, files_opened, timeout):
             callers = []
             for call in incoming:
                 entry = format_hierarchy_item(call["from"])
-                entry["call_sites"] = [
-                    {"line": r["start"]["line"], "column": r["start"]["character"]}
-                    for r in call.get("fromRanges", [])
-                ]
+                entry["call_sites"] = format_call_sites(call.get("fromRanges", []))
                 entry["note"] = "Calls base virtual method (potential dispatch site)"
                 callers.append(entry)
             return callers
@@ -231,10 +228,7 @@ def _node_key(item):
 def _format_caller(item, depth, from_ranges):
     entry = format_hierarchy_item(item)
     entry["depth"] = depth
-    entry["call_sites"] = [
-        {"line": r["start"]["line"], "column": r["start"]["character"]}
-        for r in from_ranges
-    ]
+    entry["call_sites"] = format_call_sites(from_ranges)
     return entry
 
 
@@ -488,10 +482,7 @@ def cmd_describe(session, args):
                 callers = []
                 for call in incoming:
                     entry = format_hierarchy_item(call["from"])
-                    entry["call_sites"] = [
-                        {"line": r["start"]["line"], "column": r["start"]["character"]}
-                        for r in call.get("fromRanges", [])
-                    ]
+                    entry["call_sites"] = format_call_sites(call.get("fromRanges", []))
                     callers.append(entry)
                 result["callers"] = callers
 
