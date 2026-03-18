@@ -1,64 +1,35 @@
 from ..formatters import format_location, normalize_locations
 
 
-def cmd_goto_definition(session, args):
+def _goto(session, args, method: str, label: str):
     uri = session.open_file(args.file)
-    result = session.client.request("textDocument/definition", {
+    result = session.client.request(method, {
         "textDocument": {"uri": uri},
         "position": {"line": args.line, "character": args.column},
     }, timeout=session.timeout)
     locations = normalize_locations(result)
     if not locations:
-        return {"found": False, "message": "No definition found"}
+        return {"found": False, "message": f"No {label} found"}
     return {
         "found": True, "count": len(locations),
         "locations": [format_location(loc) for loc in locations],
     }
+
+
+def cmd_goto_definition(session, args):
+    return _goto(session, args, "textDocument/definition", "definition")
 
 
 def cmd_goto_declaration(session, args):
-    uri = session.open_file(args.file)
-    result = session.client.request("textDocument/declaration", {
-        "textDocument": {"uri": uri},
-        "position": {"line": args.line, "character": args.column},
-    }, timeout=session.timeout)
-    locations = normalize_locations(result)
-    if not locations:
-        return {"found": False, "message": "No declaration found"}
-    return {
-        "found": True, "count": len(locations),
-        "locations": [format_location(loc) for loc in locations],
-    }
+    return _goto(session, args, "textDocument/declaration", "declaration")
 
 
 def cmd_goto_implementation(session, args):
-    uri = session.open_file(args.file)
-    result = session.client.request("textDocument/implementation", {
-        "textDocument": {"uri": uri},
-        "position": {"line": args.line, "character": args.column},
-    }, timeout=session.timeout)
-    locations = normalize_locations(result)
-    if not locations:
-        return {"found": False, "message": "No implementations found"}
-    return {
-        "found": True, "count": len(locations),
-        "locations": [format_location(loc) for loc in locations],
-    }
+    return _goto(session, args, "textDocument/implementation", "implementations")
 
 
 def cmd_goto_type_definition(session, args):
-    uri = session.open_file(args.file)
-    result = session.client.request("textDocument/typeDefinition", {
-        "textDocument": {"uri": uri},
-        "position": {"line": args.line, "character": args.column},
-    }, timeout=session.timeout)
-    locations = normalize_locations(result)
-    if not locations:
-        return {"found": False, "message": "No type definition found"}
-    return {
-        "found": True, "count": len(locations),
-        "locations": [format_location(loc) for loc in locations],
-    }
+    return _goto(session, args, "textDocument/typeDefinition", "type definition")
 
 
 def cmd_find_references(session, args):
