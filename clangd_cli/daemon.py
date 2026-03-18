@@ -36,7 +36,7 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
 
 def _send_to_socket(sock_path: str, request: dict) -> dict:
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    client.settimeout(120)
+    client.settimeout(300)
     client.connect(sock_path)
     try:
         payload = json.dumps(request).encode("utf-8")
@@ -51,7 +51,7 @@ def _send_to_socket(sock_path: str, request: dict) -> dict:
 
 def _handle_connection(conn: socket.socket, session: ClangdSession,
                        shutdown_flag: threading.Event):
-    conn.settimeout(120)
+    conn.settimeout(300)
     length_bytes = _recv_exact(conn, 4)
     req_length = int.from_bytes(length_bytes, "big")
     req_bytes = _recv_exact(conn, req_length)
@@ -67,8 +67,10 @@ def _handle_connection(conn: socket.socket, session: ClangdSession,
             "clangd_args": session._clangd_args,
             "opened_files": len(session._opened_files),
             "index_file": session.index_file,
+            "index_ready": session._index_ready,
         }
     elif cmd in COMMAND_MAP:
+        session.ensure_index_ready()
         cmd_args = argparse.Namespace(**request.get("args", {}))
         try:
             handler = COMMAND_MAP[cmd]
@@ -89,7 +91,7 @@ def _handle_connection(conn: socket.socket, session: ClangdSession,
 
 
 def daemon_main(project_root: str, index_file: str, compile_commands_dir: str,
-                clangd_path: str, timeout: float):
+                clangd_path: str, timeout: float, index_timeout: float = 120.0):
     sock_path = _socket_path(project_root)
     pid_path = _pid_path(project_root)
 
@@ -103,6 +105,7 @@ def daemon_main(project_root: str, index_file: str, compile_commands_dir: str,
         clangd_path=clangd_path,
         timeout=timeout,
         background_index=True,
+        index_timeout=index_timeout,
     )
 
     sys.stderr.write(f"clangd args: {' '.join(session._clangd_args)}\n")
@@ -167,7 +170,7 @@ def daemon_is_alive(project_root: str) -> bool:
 def run_via_daemon(project_root: str, command: str, args) -> dict:
     sock_path = _socket_path(project_root)
     GLOBAL_KEYS = {"project_root", "index_file", "compile_commands_dir",
-                   "clangd_path", "timeout", "oneshot", "command"}
+                   "clangd_path", "timeout", "index_timeout", "oneshot", "command"}
     cmd_args = {k: v for k, v in vars(args).items()
                 if k not in GLOBAL_KEYS and v is not None}
     return _send_to_socket(sock_path, {"command": command, "args": cmd_args})
@@ -231,6 +234,7 @@ def daemon_start(project_root: str, args):
                 compile_commands_dir=args.compile_commands_dir,
                 clangd_path=args.clangd_path,
                 timeout=args.timeout,
+                index_timeout=getattr(args, "index_timeout", 120.0) or 120.0,
             )
         except Exception as e:
             Path(_error_path(project_root)).write_text(str(e))
@@ -244,6 +248,31 @@ def daemon_stop(project_root: str):
         return _send_to_socket(_socket_path(project_root), {"command": "stop"})
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+def daemon_wait_ready(project_root: str, index_timeout: float = 120.0):
+    """Poll daemon until index_ready is True or timeout."""
+    sock_path = _socket_path(project_root)
+    deadline = time.monotonic() + index_timeout
+    poll_interval = 2.0
+
+    while time.monotonic() < deadline:
+        try:
+            resp = _send_to_socket(sock_path, {"command": "ping"})
+            if resp.get("index_ready"):
+                return resp
+        except Exception:
+            pass
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(poll_interval, remaining))
+
+    # Final check
+    try:
+        return _send_to_socket(sock_path, {"command": "ping"})
+    except Exception:
+        return {"status": "error", "message": "Daemon not responding"}
 
 
 def daemon_status(project_root: str):

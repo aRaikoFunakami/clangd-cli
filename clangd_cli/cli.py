@@ -5,7 +5,8 @@ from pathlib import Path
 
 from .session import ClangdSession
 from .commands import COMMAND_MAP
-from .daemon import daemon_start, daemon_stop, daemon_status, daemon_is_alive, run_via_daemon
+from .daemon import (daemon_start, daemon_stop, daemon_status, daemon_is_alive,
+                     daemon_wait_ready, run_via_daemon)
 from .install import install_instructions
 
 
@@ -23,10 +24,10 @@ def _add_file(parser):
 _DESCRIPTION = """\
 CLI wrapper around clangd LSP capabilities.
 
-Daemon lifecycle (start the daemon before running commands):
-  1. clangd-cli --project-root <dir> start
-  2. clangd-cli --project-root <dir> <command> --file <path> --line <n> --col <n>
-  3. clangd-cli --project-root <dir> stop
+Daemon lifecycle (daemon auto-starts when running commands):
+  clangd-cli --project-root <dir> <command> --file <path> --line <n> --col <n>
+  clangd-cli --project-root <dir> stop
+  Or explicitly: clangd-cli --project-root <dir> start [--wait]
 
 Named arguments (--file, --line, --col can be in any order):
   --file   absolute path to the source file
@@ -40,7 +41,8 @@ Configuration (optional):
     "compile_commands_dir": ".",
     "clangd_path": "clangd",
     "timeout": 30,
-    "background_index": true
+    "background_index": true,
+    "index_timeout": 120
   }
   Priority: CLI arguments > .clangd-cli.json > auto-detection.
   Run 'clangd-cli install' to generate a sample config.
@@ -70,13 +72,17 @@ def build_parser():
                         help="Path to clangd binary (default: clangd)")
     parser.add_argument("--timeout", type=float, default=30.0,
                         help="LSP request timeout in seconds (default: 30)")
+    parser.add_argument("--index-timeout", type=float, default=120.0,
+                        help="Timeout in seconds for index readiness (default: 120)")
     parser.add_argument("--oneshot", action="store_true",
                         help="Run without daemon (spawn clangd per command)")
 
     sub = parser.add_subparsers(dest="command", required=True)
 
     # Daemon lifecycle
-    sub.add_parser("start", help="Start clangd daemon in background")
+    p = sub.add_parser("start", help="Start clangd daemon in background")
+    p.add_argument("--wait", action="store_true",
+                   help="Wait until index is ready before returning")
     sub.add_parser("stop", help="Stop clangd daemon")
     sub.add_parser("status", help="Check if daemon is running")
 
@@ -172,6 +178,17 @@ def main():
     # Daemon lifecycle commands
     if args.command == "start":
         result = daemon_start(project_root, args)
+        if getattr(args, "wait", False) and result.get("status") in ("started", "already_running"):
+            sys.stderr.write("Waiting for index to be ready...\n")
+            sys.stderr.flush()
+            wait_result = daemon_wait_ready(project_root, args.index_timeout)
+            result["index_ready"] = wait_result.get("index_ready", False)
+            if result["index_ready"]:
+                sys.stderr.write("Index ready.\n")
+                sys.stderr.flush()
+            else:
+                sys.stderr.write("Warning: index readiness timeout. Proceeding anyway.\n")
+                sys.stderr.flush()
         print(json.dumps(result))
         return
 
@@ -201,7 +218,9 @@ def main():
                 compile_commands_dir=args.compile_commands_dir,
                 clangd_path=args.clangd_path,
                 timeout=args.timeout,
+                index_timeout=args.index_timeout,
             )
+            session.ensure_index_ready()
             result = COMMAND_MAP[args.command](session, args)
             print(json.dumps(result, indent=2))
         except Exception as e:
@@ -211,11 +230,16 @@ def main():
             if session:
                 session.shutdown()
     else:
+        # Auto-start daemon if not running
         if not daemon_is_alive(project_root):
-            print(json.dumps({"error": True,
-                               "message": "Daemon not running. Use 'start' first or add --oneshot."}),
-                  file=sys.stderr)
-            sys.exit(1)
+            sys.stderr.write("Daemon not running. Starting automatically...\n")
+            sys.stderr.flush()
+            start_result = daemon_start(project_root, args)
+            if start_result.get("status") not in ("started", "already_running"):
+                print(json.dumps({"error": True,
+                                   "message": f"Failed to auto-start daemon: {start_result}"}),
+                      file=sys.stderr)
+                sys.exit(1)
         try:
             result = run_via_daemon(project_root, args.command, args)
             print(json.dumps(result, indent=2))

@@ -49,9 +49,11 @@ def _load_config(project_root: str) -> dict:
 class ClangdSession:
     def __init__(self, project_root: str, index_file: str = None,
                  compile_commands_dir: str = None, clangd_path: str = "clangd",
-                 timeout: float = 30.0, background_index: bool = True):
+                 timeout: float = 30.0, background_index: bool = True,
+                 index_timeout: float = 120.0):
         self.project_root = str(Path(project_root).resolve())
         self._opened_files = set()
+        self._index_ready = False
 
         # Load project config (.clangd-cli.json)
         config = _load_config(self.project_root)
@@ -83,6 +85,9 @@ class ClangdSession:
         if timeout == 30.0:
             timeout = config.get("timeout", timeout)
         self.timeout = timeout
+        if index_timeout == 120.0:
+            index_timeout = config.get("index_timeout", index_timeout)
+        self._index_timeout = index_timeout
         if background_index is True:
             background_index = config.get("background_index", background_index)
 
@@ -157,6 +162,44 @@ class ClangdSession:
         })
         self._opened_files.add(uri)
         return uri
+
+    def ensure_index_ready(self):
+        """Wait until the index is loaded, polling with workspace/symbol queries."""
+        if self._index_ready:
+            return
+        if self.index_file is None:
+            return
+
+        import time
+        import sys
+
+        deadline = time.monotonic() + self._index_timeout
+        poll_interval = 2.0
+        sys.stderr.write("Waiting for index to be ready...\n")
+        sys.stderr.flush()
+
+        while time.monotonic() < deadline:
+            try:
+                result = self.client.request("workspace/symbol", {
+                    "query": "_",
+                }, timeout=min(10.0, self._index_timeout))
+                if result and len(result) > 0:
+                    self._index_ready = True
+                    sys.stderr.write("Index ready.\n")
+                    sys.stderr.flush()
+                    return
+            except Exception:
+                pass
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(poll_interval, remaining))
+
+        sys.stderr.write(
+            f"Warning: index readiness timeout ({self._index_timeout}s). "
+            "Proceeding anyway — results may be incomplete.\n"
+        )
+        sys.stderr.flush()
 
     def shutdown(self):
         try:

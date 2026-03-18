@@ -59,14 +59,16 @@ def _find_fallback_columns(file_path, line):
 
 def _prepare_call_hierarchy_with_fallback(session, uri, file_path, line, column, timeout):
     """Try prepareCallHierarchy at the given column, falling back to other tokens on the line."""
-    items = session.client.request("textDocument/prepareCallHierarchy", {
-        "textDocument": {"uri": uri},
-        "position": {"line": line, "character": column},
-    }, timeout=timeout)
-    if items:
-        if not isinstance(items, list):
-            items = [items]
-        return items
+    # col 0 typically hits a return type (e.g. 'void') — skip directly to fallback
+    if column > 0:
+        items = session.client.request("textDocument/prepareCallHierarchy", {
+            "textDocument": {"uri": uri},
+            "position": {"line": line, "character": column},
+        }, timeout=timeout)
+        if items:
+            if not isinstance(items, list):
+                items = [items]
+            return items
 
     for alt_col in _find_fallback_columns(file_path, line):
         if alt_col == column:
