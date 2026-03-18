@@ -37,7 +37,7 @@ Configuration (optional):
   Place .clangd-cli.json in the project root to configure defaults:
   {
     "index_file": "index.idx",
-    "compile_commands_dir": ".",
+    "compile_commands": "compile_commands.json",
     "clangd_path": "clangd",
     "timeout": 30,
     "background_index": true
@@ -64,8 +64,9 @@ def build_parser():
     parser.add_argument("--index-file",
                         help="Path to clangd index file (.idx). "
                              "Also configurable in .clangd-cli.json or auto-detected.")
-    parser.add_argument("--compile-commands-dir",
-                        help="Directory containing compile_commands.json")
+    parser.add_argument("--compile-commands",
+                        help="Path to compile_commands.json. "
+                             "Also configurable in .clangd-cli.json or auto-detected.")
     parser.add_argument("--clangd-path", default="clangd",
                         help="Path to clangd binary (default: clangd)")
     parser.add_argument("--timeout", type=float, default=30.0,
@@ -196,7 +197,7 @@ def main():
             session = ClangdSession(
                 project_root=project_root,
                 index_file=args.index_file,
-                compile_commands_dir=args.compile_commands_dir,
+                compile_commands=args.compile_commands,
                 clangd_path=args.clangd_path,
                 timeout=args.timeout,
             )

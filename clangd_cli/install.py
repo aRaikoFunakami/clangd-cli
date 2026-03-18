@@ -38,8 +38,8 @@ paths:
 ## Prerequisites
 `compile_commands.json` must exist in the project. clangd-cli auto-detects it
 in the project root, `build/`, `out/Default/`, `out/Release/`, `out/Debug/`,
-or `.build/`. For other locations, add `--compile-commands-dir`:
-`clangd-cli --project-root <project-root> --compile-commands-dir <dir> start`
+or `.build/`. For other locations, add `--compile-commands`:
+`clangd-cli --project-root <project-root> --compile-commands <path> start`
 
 ## Configuration (.clangd-cli.json)
 Project-level settings can be configured in `.clangd-cli.json` at the project root.
@@ -48,7 +48,7 @@ Run `clangd-cli install` to generate a sample config.
 ```json
 {
   "index_file": "index.idx",
-  "compile_commands_dir": ".",
+  "compile_commands": "compile_commands.json",
   "clangd_path": "clangd",
   "timeout": 30,
   "background_index": true
@@ -56,7 +56,7 @@ Run `clangd-cli install` to generate a sample config.
 ```
 
 - `index_file`: Path to pre-built clangd index (.idx) for faster symbol resolution
-- `compile_commands_dir`: Directory containing compile_commands.json
+- `compile_commands`: Path to compile_commands.json
 - `clangd_path`: Path to clangd binary
 - `timeout`: LSP request timeout in seconds
 - `background_index`: Enable/disable background indexing
@@ -231,11 +231,11 @@ clangd-cli switch-header-source --file /path/to/file.cpp
 ## Prerequisites
 `compile_commands.json` must exist in the project. Auto-detected in project root,
 `build/`, `out/Default/`, `out/Release/`, `out/Debug/`, or `.build/`.
-For other locations: `clangd-cli --compile-commands-dir <dir> ...`
+For other locations: `clangd-cli --compile-commands <path> ...`
 
 ## Configuration
 Project settings in `.clangd-cli.json` (project root): index_file,
-compile_commands_dir, clangd_path, timeout, background_index.
+compile_commands, clangd_path, timeout, background_index.
 Priority: CLI args > .clangd-cli.json > auto-detection.
 Run `clangd-cli install` to generate a sample config.
 
@@ -258,7 +258,7 @@ clangd-cli --project-root /home/user/myproject stop
 
 CLANGD_CLI_CONFIG_SAMPLE = """\
 {
-  "compile_commands_dir": ".",
+  "compile_commands": "compile_commands.json",
   "index_file": "",
   "clangd_path": "clangd",
   "timeout": 30,
