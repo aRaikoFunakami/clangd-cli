@@ -12,15 +12,10 @@ Use this skill when asked to:
 - Find all implementations of a virtual method
 - Understand class hierarchies
 
-## Usage discovery
+## Command reference
 
-**Always check `--help` before running a command you are unsure about.**
-
-```
-clangd-cli --help                        # list all commands and global options
-clangd-cli <command> --help              # show command-specific arguments
-clangd-cli schema --command <name>       # JSON Schema of command output
-```
+For full argument details, see [reference.md](reference.md).
+For output JSON Schema: `clangd-cli schema --command <name>`
 
 ## Decision flow
 
