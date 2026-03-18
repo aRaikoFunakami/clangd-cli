@@ -1,0 +1,7 @@
+{
+  "compile_commands_dir": ".",
+  "index_file": "",
+  "clangd_path": "clangd",
+  "timeout": 30,
+  "background_index": true
+}

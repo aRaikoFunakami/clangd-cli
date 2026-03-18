@@ -4,284 +4,23 @@ import json
 import sys
 from pathlib import Path
 
-CLAUDE_MD_SECTION = """\
+_TEMPLATES_DIR = Path(__file__).parent / "templates"
 
-## C++ Code Navigation
-When working with C++ files, use `clangd-cli` for semantic code navigation
-instead of grep for ambiguous symbol names.
-See `.claude/rules/cpp-navigation.md` for details.
-"""
 
-CLAUDE_RULES_CPP_NAV = """\
----
-paths:
-  - "**/*.cpp"
-  - "**/*.cc"
-  - "**/*.h"
-  - "**/*.hh"
----
+def _read_template(name: str) -> str:
+    return (_TEMPLATES_DIR / name).read_text()
 
-# clangd-cli Usage Guide
-
-## When to use clangd-cli (instead of grep)
-- Locating a symbol by name: `workspace-symbols --query <name>` returns file/line/col
-  — use this instead of grep to find where a function or class is defined
-- Tracing callers of a function with a common name (draw, get, set, etc.)
-- Finding all references to a specific symbol (not just text matches)
-- Understanding type hierarchies and virtual dispatch
-- Getting type information for auto variables or templates
-- Impact analysis before modifying a function signature
-
-## When grep is sufficient
-- Searching for text in comments, strings, or disabled code
-- Pattern-based searches across the project (regex)
-
-## Prerequisites
-`compile_commands.json` must exist in the project. clangd-cli auto-detects it
-in the project root, `build/`, `out/Default/`, `out/Release/`, `out/Debug/`,
-or `.build/`. For other locations, add `--compile-commands-dir`:
-`clangd-cli --project-root <project-root> --compile-commands-dir <dir> start`
-
-## Configuration (.clangd-cli.json)
-Project-level settings can be configured in `.clangd-cli.json` at the project root.
-Run `clangd-cli install` to generate a sample config.
-
-```json
-{
-  "index_file": "index.idx",
-  "compile_commands_dir": ".",
-  "clangd_path": "clangd",
-  "timeout": 30,
-  "background_index": true
-}
-```
-
-- `index_file`: Path to pre-built clangd index (.idx) for faster symbol resolution
-- `compile_commands_dir`: Directory containing compile_commands.json
-- `clangd_path`: Path to clangd binary
-- `timeout`: LSP request timeout in seconds
-- `background_index`: Enable/disable background indexing
-
-Priority: CLI arguments > .clangd-cli.json > auto-detection.
-If configured, `clangd-cli --project-root <dir> start` is sufficient.
-
-## Daemon lifecycle (IMPORTANT)
-The daemon MUST be started before running any command, and stopped when done.
-
-1. Start the daemon first:
-   `clangd-cli --project-root <project-root> start`
-2. Run commands (as many as needed):
-   `clangd-cli --project-root <project-root> <command> ...`
-3. Stop the daemon when finished:
-   `clangd-cli --project-root <project-root> stop`
-
-Check if daemon is running: `clangd-cli --project-root <project-root> status`
-
-**Important**: Check the `start` response JSON. If it contains a `hint` field,
-it means no index file was found — consider specifying one for better results.
-
-Example session:
-```
-clangd-cli --project-root /home/user/myproject start
-clangd-cli --project-root /home/user/myproject hover --file /home/user/myproject/src/main.cpp --line 10 --col 5
-clangd-cli --project-root /home/user/myproject find-references --file /home/user/myproject/src/main.cpp --line 10 --col 5
-clangd-cli --project-root /home/user/myproject stop
-```
-
-## Named arguments
-All commands use named arguments (`--file`, `--line`, `--col`).
-Line and column are 0-indexed.
-
-## Commands
-
-### Composite commands (use these first)
-- `clangd-cli impact-analysis --file <path> --line <n> --col <n> [--max-depth N] [--max-nodes N] [--no-virtual] [--no-callees]`
-  — Recursive caller trace with BFS + callees + virtual dispatch + lambda detection (all enabled by default)
-  Example: `clangd-cli impact-analysis --file /path/to/file.cpp --line 10 --col 5`
-- `clangd-cli describe --file <path> --line <n> --col <n> [--no-callers] [--no-callees]`
-  — Symbol overview: hover + definition + references + callers + callees
-  Example: `clangd-cli describe --file /path/to/file.cpp --line 10 --col 5`
-
-### Navigation
-- `clangd-cli goto-definition --file <path> --line <n> --col <n>`
-  Example: `clangd-cli goto-definition --file /path/to/file.cpp --line 10 --col 5`
-- `clangd-cli goto-declaration --file <path> --line <n> --col <n>`
-- `clangd-cli goto-type-definition --file <path> --line <n> --col <n>` — jump to the type of the symbol
-- `clangd-cli goto-implementation --file <path> --line <n> --col <n>` — find overrides of a virtual method
-- `clangd-cli switch-header-source --file <path>` — toggle .cc ↔ .hh
-  Example: `clangd-cli switch-header-source --file /path/to/file.cpp`
-
-### Understanding code
-- `clangd-cli hover --file <path> --line <n> --col <n>` — type signature, including auto-deduced types
-  Example: `clangd-cli hover --file /path/to/file.cpp --line 10 --col 5`
-- `clangd-cli ast --file <path> --line <n> --col <n> --depth N` — AST structure at position
-- `clangd-cli file-symbols --file <path>` — hierarchical symbol outline
-  Example: `clangd-cli file-symbols --file /path/to/file.cpp`
-- `clangd-cli workspace-symbols --query <name>` — search symbols by name
-  Example: `clangd-cli workspace-symbols --query MyClass`
-
-### Type hierarchies
-- `clangd-cli type-hierarchy-sub --file <path> --line <n> --col <n>` — derived classes
-- `clangd-cli type-hierarchy-super --file <path> --line <n> --col <n>` — base classes
-
-### Low-level (use when composite commands don't fit)
-- `clangd-cli call-hierarchy-in --file <path> --line <n> --col <n>` — direct callers (1 level only)
-- `clangd-cli call-hierarchy-out --file <path> --line <n> --col <n>` — direct callees (1 level only)
-- `clangd-cli find-references --file <path> --line <n> --col <n>` — all references to a symbol
-- `clangd-cli highlight-symbol --file <path> --line <n> --col <n>` — all occurrences with Read/Write/Text kind
-- `clangd-cli diagnostics --file <path>` — compiler errors/warnings
-- `clangd-cli inlay-hints --file <path> --range START:END` — parameter names, deduced types
-- `clangd-cli document-links --file <path>` — resolved #include paths
-
-## Known limitations
-- `call-hierarchy-in` misses calls from within lambdas.
-  Use `impact-analysis` instead — it auto-detects uncovered references.
-- Virtual dispatch: `impact-analysis` automatically explores base class callers and
-  sibling overrides for virtual methods. Use `type-hierarchy-sub` for full class hierarchy.
-"""
-
-CLAUDE_SKILL = """\
----
-name: clangd-nav
-description: Analyze C++ code impact and navigate symbols using clangd semantic analysis
-allowed-tools: Bash(clangd-cli *)
----
-
-# C++ Semantic Navigation
-
-Use this skill when asked to:
-- Analyze impact of modifying a C++ function
-- Trace call chains through the codebase
-- Find all implementations of a virtual method
-- Understand class hierarchies
-
-## Decision flow
-1. Don't know the file/line/col of the symbol? → `workspace-symbols --query <name>` to locate it first
-2. Need impact analysis / caller trace? → `impact-analysis` (includes callees, virtual dispatch, and lambda detection by default)
-3. Need symbol overview (type, callers, callees)? → `describe`
-4. Is the symbol name unique and you just need the source text? → grep is faster
-5. Is the name common (draw, get, set)? → use clangd-cli
-6. Need type info for auto/template? → `describe` or `hover`
-7. Virtual method analysis? → `impact-analysis` (automatically traces base class callers and sibling overrides)
-
-## Command syntax
-All commands use named arguments: `--file <path> --line <n> --col <n>`
-
-Example:
-```
-clangd-cli --project-root . start
-clangd-cli --project-root . workspace-symbols --query OnThemeChanged
-clangd-cli --project-root . impact-analysis --file src/main.cpp --line 10 --col 5
-clangd-cli --project-root . stop
-```
-
-$ARGUMENTS
-"""
-
-COPILOT_INSTRUCTIONS = """\
-# Project Instructions
-
-## C++ Code Navigation
-This project includes `clangd-cli` for semantic C++ code navigation.
-Use it instead of grep when dealing with common symbol names or tracing
-call hierarchies.
-
-See `.github/instructions/cpp-navigation.instructions.md` for details.
-"""
-
-COPILOT_CPP_NAV = """\
----
-applyTo: "**/*.{cpp,cc,h,hh}"
----
-
-# clangd-cli for C++ Navigation
-
-## Quick reference
-```
-clangd-cli <command> [args]
-```
-
-Composite: impact-analysis, describe
-Navigation: hover, goto-definition, goto-declaration, goto-type-definition,
-goto-implementation, find-references, switch-header-source
-Symbols: file-symbols, workspace-symbols, call-hierarchy-in, call-hierarchy-out,
-type-hierarchy-sub, type-hierarchy-super
-Structure: highlight-symbol, document-links, ast, diagnostics, inlay-hints,
-semantic-tokens
-
-## Named arguments
-All commands use named arguments (`--file`, `--line`, `--col`).
-Line and column are 0-indexed.
-
-## When to use (instead of grep)
-- Locate a symbol: `clangd-cli workspace-symbols --query <name>` — find file/line/col by name
-- Impact analysis: `clangd-cli impact-analysis --file <path> --line <n> --col <n>` — recursive caller trace + callees + virtual dispatch
-- Symbol overview: `clangd-cli describe --file <path> --line <n> --col <n>` — type + callers + callees
-- Common names: draw, get, set, create, handle, update, etc.
-- Type queries: what type is this auto variable?
-- Class hierarchies: what implements this interface?
-
-## Command examples
-```
-clangd-cli impact-analysis --file /path/to/file.cpp --line 10 --col 5
-clangd-cli describe --file /path/to/file.cpp --line 10 --col 5
-clangd-cli goto-definition --file /path/to/file.cpp --line 10 --col 5
-clangd-cli hover --file /path/to/file.cpp --line 10 --col 5
-clangd-cli file-symbols --file /path/to/file.cpp
-clangd-cli workspace-symbols --query MyClass
-clangd-cli switch-header-source --file /path/to/file.cpp
-```
-
-## Prerequisites
-`compile_commands.json` must exist in the project. Auto-detected in project root,
-`build/`, `out/Default/`, `out/Release/`, `out/Debug/`, or `.build/`.
-For other locations: `clangd-cli --compile-commands-dir <dir> ...`
-
-## Configuration
-Project settings in `.clangd-cli.json` (project root): index_file,
-compile_commands_dir, clangd_path, timeout, background_index.
-Priority: CLI args > .clangd-cli.json > auto-detection.
-Run `clangd-cli install` to generate a sample config.
-
-## Daemon lifecycle (IMPORTANT)
-The daemon MUST be started before running any command, and stopped when done.
-
-1. Start: `clangd-cli --project-root <project-root> start`
-2. Run commands
-3. Stop: `clangd-cli --project-root <project-root> stop`
-
-Check the `start` response for `hint` field — it indicates missing index file.
-
-Example session:
-```
-clangd-cli --project-root /home/user/myproject start
-clangd-cli --project-root /home/user/myproject hover --file /home/user/myproject/src/main.cpp --line 10 --col 5
-clangd-cli --project-root /home/user/myproject stop
-```
-"""
-
-CLANGD_CLI_CONFIG_SAMPLE = """\
-{
-  "compile_commands_dir": ".",
-  "index_file": "",
-  "clangd_path": "clangd",
-  "timeout": 30,
-  "background_index": true
-}
-"""
-
-_MARKER = "clangd-cli"
 
 FILES = [
-    (".claude/rules/cpp-navigation.md", CLAUDE_RULES_CPP_NAV),
-    (".claude/skills/clangd-nav/SKILL.md", CLAUDE_SKILL),
-    (".github/instructions/cpp-navigation.instructions.md", COPILOT_CPP_NAV),
+    (".claude/rules/cpp-navigation.md", "claude-rules-cpp-nav.md"),
+    (".claude/skills/clangd-nav/SKILL.md", "claude-skill.md"),
+    (".github/instructions/cpp-navigation.instructions.md", "copilot-cpp-nav.md"),
 ]
 
 CREATE_IF_MISSING = [
-    ("CLAUDE.md", CLAUDE_MD_SECTION.lstrip()),
-    (".github/copilot-instructions.md", COPILOT_INSTRUCTIONS.lstrip()),
-    (".clangd-cli.json", CLANGD_CLI_CONFIG_SAMPLE),
+    ("CLAUDE.md", "claude-md-section.md", True),
+    (".github/copilot-instructions.md", "copilot-instructions.md", True),
+    (".clangd-cli.json", "clangd-cli-config.json", False),
 ]
 
 # Permissions to add to .claude/settings.local.json
@@ -356,15 +95,18 @@ def install_instructions(project_root: str, interactive: bool = False) -> dict:
     settings_result = {}
 
     # Files that are always written (overwrite)
-    for rel_path, content in FILES:
+    for rel_path, template_name in FILES:
         path = root / rel_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+        path.write_text(_read_template(template_name))
         created.append(rel_path)
 
     # Files that are created only if they don't exist
-    for rel_path, content in CREATE_IF_MISSING:
+    for rel_path, template_name, lstrip in CREATE_IF_MISSING:
         path = root / rel_path
+        content = _read_template(template_name)
+        if lstrip:
+            content = content.lstrip()
         if path.exists():
             skipped.append(rel_path)
         else:
