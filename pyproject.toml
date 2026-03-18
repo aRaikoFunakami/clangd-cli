@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "CLI wrapper around clangd's LSP capabilities"
 requires-python = ">=3.9"
 license = "MIT"
+dependencies = ["pydantic>=2.0"]
 
 [project.scripts]
 clangd-cli = "clangd_cli.cli:main"

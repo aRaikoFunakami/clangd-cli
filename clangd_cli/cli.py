@@ -88,6 +88,12 @@ def build_parser():
     sub.add_parser("stop", help="Stop clangd daemon")
     sub.add_parser("status", help="Check if daemon is running")
 
+    # Schema
+    p = sub.add_parser("schema",
+                       help="Print JSON Schema for command output formats")
+    p.add_argument("--command", dest="schema_command",
+                   help="Specific command name (omit for all)")
+
     # Install AI assistant instructions
     p = sub.add_parser("install",
                        help="Install Claude Code / GitHub Copilot instruction files")
@@ -204,6 +210,21 @@ def main():
         print(json.dumps(result, indent=2))
         return
 
+    if args.command == "schema":
+        from .models import get_command_schemas
+        schemas = get_command_schemas()
+        cmd_name = getattr(args, "schema_command", None)
+        if cmd_name:
+            if cmd_name not in schemas:
+                print(json.dumps({"error": True,
+                                   "message": f"Unknown command: {cmd_name}"}),
+                      file=sys.stderr)
+                sys.exit(1)
+            print(json.dumps(schemas[cmd_name], indent=2))
+        else:
+            print(json.dumps(schemas, indent=2))
+        return
+
     if args.command == "install":
         interactive = not args.yes
         result = install_instructions(project_root, interactive=interactive)
@@ -211,6 +232,11 @@ def main():
         return
 
     # LSP commands
+    def _serialize(result):
+        if hasattr(result, "model_dump"):
+            return result.model_dump(exclude_none=True)
+        return result
+
     if args.oneshot:
         session = None
         try:
@@ -225,7 +251,7 @@ def main():
             )
             session.ensure_index_ready()
             result = COMMAND_MAP[args.command](session, args)
-            print(json.dumps(result, indent=2))
+            print(json.dumps(_serialize(result), indent=2))
         except Exception as e:
             print(json.dumps({"error": True, "message": str(e)}), file=sys.stderr)
             sys.exit(1)
@@ -245,7 +271,7 @@ def main():
                 sys.exit(1)
         try:
             result = run_via_daemon(project_root, args.command, args)
-            print(json.dumps(result, indent=2))
+            print(json.dumps(_serialize(result), indent=2))
         except Exception as e:
             print(json.dumps({"error": True, "message": str(e)}), file=sys.stderr)
             sys.exit(1)
