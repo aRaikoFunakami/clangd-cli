@@ -33,15 +33,20 @@ Use this skill when asked to:
 **Do NOT use Grep as a parallel fallback** for structural queries that clangd-cli handles.
 If clangd-cli can answer the question (overrides, callers, references), do not also issue Grep for the same information.
 
+## Daemon lifecycle
+
+- **Do NOT call `start` or `stop` unless the user explicitly asks.** The daemon auto-starts when any command is executed.
+- `start` should be run **beforehand** by the user or explicitly requested by the user, because index loading can take significant time. If the daemon is already running, calling `start` again is harmless but wasteful.
+- If the user asks to start or stop the daemon, do so.
+- If a command returns incomplete results (e.g., empty callers), the index may not be ready yet. Suggest the user run `clangd-cli --project-root <dir> start --wait` and retry.
+
 ## Command syntax
 All commands use named arguments: `--file <path> --line <n> --col <n>`
 
 Example:
 ```
-clangd-cli --project-root . start
 clangd-cli --project-root . workspace-symbols --query OnThemeChanged
 clangd-cli --project-root . impact-analysis --file src/main.cpp --line 10 --col 5
-clangd-cli --project-root . stop
 ```
 
 $ARGUMENTS

@@ -55,26 +55,16 @@ Priority: CLI arguments > .clangd-cli.json > auto-detection.
 If configured, `clangd-cli --project-root <dir> start` is sufficient.
 
 ## Daemon lifecycle (IMPORTANT)
-The daemon MUST be started before running any command, and stopped when done.
-
-1. Start the daemon first:
-   `clangd-cli --project-root <project-root> start`
-2. Run commands (as many as needed):
-   `clangd-cli --project-root <project-root> <command> ...`
-3. Stop the daemon when finished:
-   `clangd-cli --project-root <project-root> stop`
-
-Check if daemon is running: `clangd-cli --project-root <project-root> status`
-
-**Important**: Check the `start` response JSON. If it contains a `hint` field,
-it means no index file was found — consider specifying one for better results.
+- **Do NOT call `start` or `stop` unless the user explicitly asks.** The daemon auto-starts when any command is executed.
+- `start` should be run **beforehand** by the user or explicitly requested by the user, because index loading can take significant time.
+- If the user asks to start or stop the daemon, do so.
+- If a command returns incomplete results (e.g., empty callers), the index may not be ready yet. Suggest the user run `clangd-cli --project-root <dir> start --wait` and retry.
+- Check if daemon is running: `clangd-cli --project-root <project-root> status`
 
 Example session:
 ```
-clangd-cli --project-root /home/user/myproject start
 clangd-cli --project-root /home/user/myproject hover --file /home/user/myproject/src/main.cpp --line 10 --col 5
 clangd-cli --project-root /home/user/myproject find-references --file /home/user/myproject/src/main.cpp --line 10 --col 5
-clangd-cli --project-root /home/user/myproject stop
 ```
 
 ## Named arguments
