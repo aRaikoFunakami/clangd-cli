@@ -68,8 +68,10 @@ def build_parser():
     sub.add_parser("status", help="Check if daemon is running")
 
     # Install AI assistant instructions
-    sub.add_parser("install",
-                   help="Install Claude Code / GitHub Copilot instruction files")
+    p = sub.add_parser("install",
+                       help="Install Claude Code / GitHub Copilot instruction files")
+    p.add_argument("-y", "--yes", action="store_true",
+                   help="Skip confirmation prompts (non-interactive mode)")
 
     # Analysis
     p = sub.add_parser("hover", help="Get hover information")
@@ -169,7 +171,8 @@ def main():
         return
 
     if args.command == "install":
-        result = install_instructions(project_root)
+        interactive = not args.yes
+        result = install_instructions(project_root, interactive=interactive)
         print(json.dumps(result, indent=2))
         return
 
