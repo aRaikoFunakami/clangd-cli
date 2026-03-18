@@ -14,14 +14,17 @@ from .errors import LSPError, LSPTimeoutError
 from .commands import COMMAND_MAP
 
 
-def _socket_path(project_root: str) -> str:
+def _tmp_path(project_root: str, suffix: str) -> str:
     h = hashlib.sha256(str(Path(project_root).resolve()).encode()).hexdigest()[:12]
-    return f"/tmp/clangd-cli-{h}.sock"
+    return f"/tmp/clangd-cli-{h}.{suffix}"
+
+
+def _socket_path(project_root: str) -> str:
+    return _tmp_path(project_root, "sock")
 
 
 def _pid_path(project_root: str) -> str:
-    h = hashlib.sha256(str(Path(project_root).resolve()).encode()).hexdigest()[:12]
-    return f"/tmp/clangd-cli-{h}.pid"
+    return _tmp_path(project_root, "pid")
 
 
 def _recv_exact(sock: socket.socket, n: int) -> bytes:
@@ -177,8 +180,7 @@ def run_via_daemon(project_root: str, command: str, args) -> dict:
 
 
 def _error_path(project_root: str) -> str:
-    h = hashlib.sha256(str(Path(project_root).resolve()).encode()).hexdigest()[:12]
-    return f"/tmp/clangd-cli-{h}.err"
+    return _tmp_path(project_root, "err")
 
 
 def daemon_start(project_root: str, args):
