@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -23,22 +24,67 @@ def _find_compile_commands(project_root: str) -> str | None:
     return None
 
 
+def _find_index_file(project_root: str) -> str | None:
+    candidates = [
+        "index.idx",
+        ".clangd.idx",
+        "clangd.idx",
+        ".cache/clangd/index.idx",
+        "build/index.idx",
+    ]
+    for candidate in candidates:
+        p = Path(project_root) / candidate
+        if p.is_file():
+            return str(p)
+    return None
+
+
+def _load_config(project_root: str) -> dict:
+    p = Path(project_root) / ".clangd-cli.json"
+    if p.is_file():
+        return json.loads(p.read_text(encoding="utf-8"))
+    return {}
+
+
 class ClangdSession:
     def __init__(self, project_root: str, index_file: str = None,
                  compile_commands_dir: str = None, clangd_path: str = "clangd",
                  timeout: float = 30.0, background_index: bool = True):
         self.project_root = str(Path(project_root).resolve())
-        self.timeout = timeout
         self._opened_files = set()
 
+        # Load project config (.clangd-cli.json)
+        config = _load_config(self.project_root)
+
+        # 3-tier resolution: CLI arg > config > auto-detect
+        if not index_file:
+            index_file = config.get("index_file") or None
+        if not index_file:
+            index_file = _find_index_file(self.project_root)
+        if index_file and not os.path.isabs(index_file):
+            index_file = str(Path(self.project_root) / index_file)
+        self.index_file = index_file
+
+        if not compile_commands_dir:
+            compile_commands_dir = config.get("compile_commands_dir") or None
         if not compile_commands_dir:
             compile_commands_dir = _find_compile_commands(self.project_root)
+        if compile_commands_dir and not os.path.isabs(compile_commands_dir):
+            compile_commands_dir = str(Path(self.project_root) / compile_commands_dir)
         if not compile_commands_dir:
             raise RuntimeError(
                 f"compile_commands.json not found under '{self.project_root}'. "
                 "Generate it for your build system (e.g. cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON, "
                 "bear -- make) or specify --compile-commands-dir."
             )
+
+        if clangd_path == "clangd":
+            clangd_path = config.get("clangd_path", clangd_path)
+        if timeout == 30.0:
+            timeout = config.get("timeout", timeout)
+        self.timeout = timeout
+        if background_index is True:
+            background_index = config.get("background_index", background_index)
 
         args = [clangd_path]
         if index_file:

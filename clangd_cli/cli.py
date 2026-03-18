@@ -33,6 +33,18 @@ Named arguments (--file, --line, --col can be in any order):
   --line   line number (0-indexed)
   --col    column number (0-indexed)
 
+Configuration (optional):
+  Place .clangd-cli.json in the project root to configure defaults:
+  {
+    "index_file": "index.idx",
+    "compile_commands_dir": ".",
+    "clangd_path": "clangd",
+    "timeout": 30,
+    "background_index": true
+  }
+  Priority: CLI arguments > .clangd-cli.json > auto-detection.
+  Run 'clangd-cli install' to generate a sample config.
+
 Example session:
   clangd-cli --project-root /home/user/proj start
   clangd-cli --project-root /home/user/proj hover --file /home/user/proj/src/main.cpp --line 10 --col 5
@@ -50,7 +62,8 @@ def build_parser():
     parser.add_argument("--project-root", default=".",
                         help="Project root directory (default: cwd)")
     parser.add_argument("--index-file",
-                        help="Path to clangd index file (.idx)")
+                        help="Path to clangd index file (.idx). "
+                             "Also configurable in .clangd-cli.json or auto-detected.")
     parser.add_argument("--compile-commands-dir",
                         help="Directory containing compile_commands.json")
     parser.add_argument("--clangd-path", default="clangd",

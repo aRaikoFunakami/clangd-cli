@@ -9,7 +9,7 @@ import threading
 import time
 from pathlib import Path
 
-from .session import ClangdSession
+from .session import ClangdSession, _find_compile_commands, _find_index_file, _load_config
 from .errors import LSPError, LSPTimeoutError
 from .commands import COMMAND_MAP
 
@@ -66,6 +66,7 @@ def _handle_connection(conn: socket.socket, session: ClangdSession,
             "status": "ok", "pid": os.getpid(),
             "clangd_args": session._clangd_args,
             "opened_files": len(session._opened_files),
+            "index_file": session.index_file,
         }
     elif cmd in COMMAND_MAP:
         cmd_args = argparse.Namespace(**request.get("args", {}))
@@ -181,6 +182,15 @@ def daemon_start(project_root: str, args):
     if daemon_is_alive(project_root):
         return {"status": "already_running"}
 
+    # Resolve config for response (mirrors session.py logic)
+    config = _load_config(project_root)
+    resolved_index = (args.index_file
+                      or config.get("index_file") or None
+                      or _find_index_file(project_root))
+    resolved_ccd = (args.compile_commands_dir
+                    or config.get("compile_commands_dir") or None
+                    or _find_compile_commands(project_root))
+
     err_path = _error_path(project_root)
     if os.path.exists(err_path):
         os.unlink(err_path)
@@ -190,7 +200,19 @@ def daemon_start(project_root: str, args):
         for _ in range(50):
             time.sleep(0.1)
             if daemon_is_alive(project_root):
-                return {"status": "started", "pid": pid}
+                result = {"status": "started", "pid": pid}
+                if resolved_index:
+                    result["index_file"] = resolved_index
+                else:
+                    result["hint"] = (
+                        "No index file (.idx) detected. If you have a pre-built index, "
+                        "stop the daemon and restart with: "
+                        "clangd-cli --project-root <dir> --index-file <path> start  "
+                        "Or add it to .clangd-cli.json: {\"index_file\": \"<path>\"}"
+                    )
+                if resolved_ccd:
+                    result["compile_commands_dir"] = resolved_ccd
+                return result
         # Check if child wrote an error
         if os.path.exists(err_path):
             error_msg = Path(err_path).read_text().strip()

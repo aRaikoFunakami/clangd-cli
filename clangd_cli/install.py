@@ -41,6 +41,29 @@ in the project root, `build/`, `out/Default/`, `out/Release/`, `out/Debug/`,
 or `.build/`. For other locations, add `--compile-commands-dir`:
 `clangd-cli --project-root <project-root> --compile-commands-dir <dir> start`
 
+## Configuration (.clangd-cli.json)
+Project-level settings can be configured in `.clangd-cli.json` at the project root.
+Run `clangd-cli install` to generate a sample config.
+
+```json
+{
+  "index_file": "index.idx",
+  "compile_commands_dir": ".",
+  "clangd_path": "clangd",
+  "timeout": 30,
+  "background_index": true
+}
+```
+
+- `index_file`: Path to pre-built clangd index (.idx) for faster symbol resolution
+- `compile_commands_dir`: Directory containing compile_commands.json
+- `clangd_path`: Path to clangd binary
+- `timeout`: LSP request timeout in seconds
+- `background_index`: Enable/disable background indexing
+
+Priority: CLI arguments > .clangd-cli.json > auto-detection.
+If configured, `clangd-cli --project-root <dir> start` is sufficient.
+
 ## Daemon lifecycle (IMPORTANT)
 The daemon MUST be started before running any command, and stopped when done.
 
@@ -52,6 +75,9 @@ The daemon MUST be started before running any command, and stopped when done.
    `clangd-cli --project-root <project-root> stop`
 
 Check if daemon is running: `clangd-cli --project-root <project-root> status`
+
+**Important**: Check the `start` response JSON. If it contains a `hint` field,
+it means no index file was found — consider specifying one for better results.
 
 Example session:
 ```
@@ -207,6 +233,12 @@ clangd-cli switch-header-source --file /path/to/file.cpp
 `build/`, `out/Default/`, `out/Release/`, `out/Debug/`, or `.build/`.
 For other locations: `clangd-cli --compile-commands-dir <dir> ...`
 
+## Configuration
+Project settings in `.clangd-cli.json` (project root): index_file,
+compile_commands_dir, clangd_path, timeout, background_index.
+Priority: CLI args > .clangd-cli.json > auto-detection.
+Run `clangd-cli install` to generate a sample config.
+
 ## Daemon lifecycle (IMPORTANT)
 The daemon MUST be started before running any command, and stopped when done.
 
@@ -214,12 +246,24 @@ The daemon MUST be started before running any command, and stopped when done.
 2. Run commands
 3. Stop: `clangd-cli --project-root <project-root> stop`
 
+Check the `start` response for `hint` field — it indicates missing index file.
+
 Example session:
 ```
 clangd-cli --project-root /home/user/myproject start
 clangd-cli --project-root /home/user/myproject hover --file /home/user/myproject/src/main.cpp --line 10 --col 5
 clangd-cli --project-root /home/user/myproject stop
 ```
+"""
+
+CLANGD_CLI_CONFIG_SAMPLE = """\
+{
+  "compile_commands_dir": ".",
+  "index_file": "",
+  "clangd_path": "clangd",
+  "timeout": 30,
+  "background_index": true
+}
 """
 
 _MARKER = "clangd-cli"
@@ -233,6 +277,7 @@ FILES = [
 CREATE_IF_MISSING = [
     ("CLAUDE.md", CLAUDE_MD_SECTION.lstrip()),
     (".github/copilot-instructions.md", COPILOT_INSTRUCTIONS.lstrip()),
+    (".clangd-cli.json", CLANGD_CLI_CONFIG_SAMPLE),
 ]
 
 # Permissions to add to .claude/settings.local.json
