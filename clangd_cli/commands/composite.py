@@ -239,7 +239,7 @@ def _format_caller(item, depth, from_ranges):
 def cmd_impact_analysis(session, args):
     max_depth = getattr(args, "max_depth", 5) or 5
     max_nodes = getattr(args, "max_nodes", 100) or 100
-    include_virtual = getattr(args, "include_virtual", False)
+    no_virtual = getattr(args, "no_virtual", False)
 
     # Phase 1: Prepare root (with column fallback)
     uri = session.open_file(args.file)
@@ -249,6 +249,11 @@ def cmd_impact_analysis(session, args):
         return {"found": False, "message": "No call hierarchy available at this position"}
     root_item = root_items[0]
     root_formatted = format_hierarchy_item(root_item)
+
+    # Use resolved position (may differ from args if fallback was used)
+    root_pos = root_item.get("selectionRange", root_item.get("range", {})).get("start", {})
+    resolved_line = root_pos.get("line", args.line)
+    resolved_col = root_pos.get("character", args.column)
 
     # Phase 1b: Callees from root
     callees = []
@@ -261,10 +266,10 @@ def cmd_impact_analysis(session, args):
         except Exception:
             pass
 
-    # Phase 2: find-references for lambda detection
+    # Phase 2: find-references for lambda detection (use resolved position)
     refs_result = session.client.request("textDocument/references", {
         "textDocument": {"uri": uri},
-        "position": {"line": args.line, "character": args.column},
+        "position": {"line": resolved_line, "character": resolved_col},
         "context": {"includeDeclaration": True},
     }, timeout=session.timeout)
     all_refs = normalize_locations(refs_result)
@@ -360,9 +365,9 @@ def cmd_impact_analysis(session, args):
             "note": "Reference not found in call hierarchy (possible lambda/macro)"
         })
 
-    # Phase 5: Virtual dispatch (optional)
+    # Phase 5: Virtual dispatch (default on; skip with --no-virtual)
     virtual_dispatch = {"base_method": None, "dispatch_callers": [], "sibling_overrides": []}
-    if include_virtual:
+    if not no_virtual:
         try:
             virtual_dispatch = _explore_virtual_dispatch(
                 session, root_item, uri, files_opened, session.timeout)

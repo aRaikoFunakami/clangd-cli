@@ -95,9 +95,9 @@ Line and column are 0-indexed.
 ## Commands
 
 ### Composite commands (use these first)
-- `clangd-cli impact-analysis --file <path> --line <n> --col <n> [--max-depth N] [--max-nodes N] [--include-virtual]`
-  — Recursive caller trace with BFS + lambda detection + virtual dispatch
-  Example: `clangd-cli impact-analysis --file /path/to/file.cpp --line 10 --col 5 --max-depth 3`
+- `clangd-cli impact-analysis --file <path> --line <n> --col <n> [--max-depth N] [--max-nodes N] [--no-virtual] [--no-callees]`
+  — Recursive caller trace with BFS + callees + virtual dispatch + lambda detection (all enabled by default)
+  Example: `clangd-cli impact-analysis --file /path/to/file.cpp --line 10 --col 5`
 - `clangd-cli describe --file <path> --line <n> --col <n> [--no-callers] [--no-callees]`
   — Symbol overview: hover + definition + references + callers + callees
   Example: `clangd-cli describe --file /path/to/file.cpp --line 10 --col 5`
@@ -136,7 +136,8 @@ Line and column are 0-indexed.
 ## Known limitations
 - `call-hierarchy-in` misses calls from within lambdas.
   Use `impact-analysis` instead — it auto-detects uncovered references.
-- Virtual dispatch: use `impact-analysis --include-virtual` or `type-hierarchy-sub`.
+- Virtual dispatch: `impact-analysis` automatically explores base class callers and
+  sibling overrides for virtual methods. Use `type-hierarchy-sub` for full class hierarchy.
 """
 
 CLAUDE_SKILL = """\
@@ -156,12 +157,12 @@ Use this skill when asked to:
 
 ## Decision flow
 1. Don't know the file/line/col of the symbol? → `workspace-symbols --query <name>` to locate it first
-2. Need impact analysis / caller trace? → `impact-analysis`
+2. Need impact analysis / caller trace? → `impact-analysis` (includes callees, virtual dispatch, and lambda detection by default)
 3. Need symbol overview (type, callers, callees)? → `describe`
 4. Is the symbol name unique and you just need the source text? → grep is faster
 5. Is the name common (draw, get, set)? → use clangd-cli
 6. Need type info for auto/template? → `describe` or `hover`
-7. Need exhaustive caller list? → `impact-analysis`
+7. Virtual method analysis? → `impact-analysis` (automatically traces base class callers and sibling overrides)
 
 ## Command syntax
 All commands use named arguments: `--file <path> --line <n> --col <n>`
@@ -214,7 +215,7 @@ Line and column are 0-indexed.
 
 ## When to use (instead of grep)
 - Locate a symbol: `clangd-cli workspace-symbols --query <name>` — find file/line/col by name
-- Impact analysis: `clangd-cli impact-analysis --file <path> --line <n> --col <n>` — recursive caller trace
+- Impact analysis: `clangd-cli impact-analysis --file <path> --line <n> --col <n>` — recursive caller trace + callees + virtual dispatch
 - Symbol overview: `clangd-cli describe --file <path> --line <n> --col <n>` — type + callers + callees
 - Common names: draw, get, set, create, handle, update, etc.
 - Type queries: what type is this auto variable?

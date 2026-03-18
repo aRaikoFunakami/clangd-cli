@@ -148,8 +148,8 @@ def build_parser():
                    help="Maximum BFS depth (default: 5)")
     p.add_argument("--max-nodes", type=int, default=100,
                    help="Maximum number of caller nodes (default: 100)")
-    p.add_argument("--include-virtual", action="store_true",
-                   help="Include virtual dispatch targets via type hierarchy")
+    p.add_argument("--no-virtual", action="store_true",
+                   help="Skip virtual dispatch exploration (base callers, sibling overrides)")
     p.add_argument("--no-callees", action="store_true",
                    help="Skip outgoing callees from root")
 
