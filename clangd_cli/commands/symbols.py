@@ -43,9 +43,9 @@ def cmd_workspace_symbols(session, args):
     }
 
 
-def _prepare_call_hierarchy(session, args):
+def _prepare_hierarchy(session, args, method: str):
     uri = session.open_file(args.file)
-    items = session.client.request("textDocument/prepareCallHierarchy", {
+    items = session.client.request(method, {
         "textDocument": {"uri": uri},
         "position": {"line": args.line, "character": args.column},
     }, timeout=session.timeout)
@@ -53,8 +53,12 @@ def _prepare_call_hierarchy(session, args):
         return None, None
     if not isinstance(items, list):
         items = [items]
-    all_symbols = [format_hierarchy_item(i) for i in items] if len(items) > 1 else None
-    return items[0], all_symbols
+    all_items = [format_hierarchy_item(i) for i in items] if len(items) > 1 else None
+    return items[0], all_items
+
+
+def _prepare_call_hierarchy(session, args):
+    return _prepare_hierarchy(session, args, "textDocument/prepareCallHierarchy")
 
 
 def cmd_call_hierarchy_in(session, args):
@@ -110,17 +114,7 @@ def cmd_call_hierarchy_out(session, args):
 
 
 def _prepare_type_hierarchy(session, args):
-    uri = session.open_file(args.file)
-    items = session.client.request("textDocument/prepareTypeHierarchy", {
-        "textDocument": {"uri": uri},
-        "position": {"line": args.line, "character": args.column},
-    }, timeout=session.timeout)
-    if not items:
-        return None, None
-    if not isinstance(items, list):
-        items = [items]
-    all_types = [format_hierarchy_item(i) for i in items] if len(items) > 1 else None
-    return items[0], all_types
+    return _prepare_hierarchy(session, args, "textDocument/prepareTypeHierarchy")
 
 
 def cmd_type_hierarchy_super(session, args):
