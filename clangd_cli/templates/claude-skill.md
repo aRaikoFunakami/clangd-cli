@@ -6,11 +6,24 @@ allowed-tools: Bash(clangd-cli *)
 
 # C++ Semantic Navigation
 
+`clangd-cli` is a **system-installed CLI tool** (not a script in this skill directory).
+Invoke it directly: `clangd-cli <command> [options]`
+
 Use this skill when asked to:
 - Analyze impact of modifying a C++ function
 - Trace call chains through the codebase
 - Find all implementations of a virtual method
 - Understand class hierarchies
+
+## Invocation pattern
+
+```
+clangd-cli <command> --file <absolute-path> --line <N> --col <N> [options]
+```
+
+- `--file` must be an **absolute path**
+- `--line` and `--col` are **0-indexed**
+- All arguments are **named** (no positional args)
 
 ## Command reference
 
