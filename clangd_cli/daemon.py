@@ -67,10 +67,10 @@ def _handle_connection(conn: socket.socket, session: ClangdSession,
     elif cmd == "ping":
         response = {
             "status": "ok", "pid": os.getpid(),
-            "clangd_args": session._clangd_args,
-            "opened_files": len(session._opened_files),
+            "clangd_args": session.clangd_args,
+            "opened_files": session.opened_files_count,
             "index_file": session.index_file,
-            "index_ready": session._index_ready,
+            "index_ready": session.index_ready,
         }
     elif cmd in COMMAND_MAP:
         session.ensure_index_ready()
@@ -111,7 +111,7 @@ def daemon_main(project_root: str, index_file: str, compile_commands_dir: str,
         index_timeout=index_timeout,
     )
 
-    sys.stderr.write(f"clangd args: {' '.join(session._clangd_args)}\n")
+    sys.stderr.write(f"clangd args: {' '.join(session.clangd_args)}\n")
     sys.stderr.flush()
 
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

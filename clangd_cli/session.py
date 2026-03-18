@@ -121,6 +121,18 @@ class ClangdSession:
         self.diagnostics = DiagnosticsCache(self.client)
         self._initialize()
 
+    @property
+    def clangd_args(self) -> list:
+        return self._clangd_args
+
+    @property
+    def opened_files_count(self) -> int:
+        return len(self._opened_files)
+
+    @property
+    def index_ready(self) -> bool:
+        return self._index_ready
+
     def _initialize(self):
         self.client.request("initialize", {
             "processId": os.getpid(),
