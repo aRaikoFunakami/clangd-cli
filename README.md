@@ -57,6 +57,7 @@ All `--line` / `--col` values are 0-indexed (matching LSP protocol).
 {
   "compile_commands_dir": ".",
   "index_file": "index.idx",
+  "no_index": false,
   "clangd_path": "clangd",
   "timeout": 30,
   "background_index": true
@@ -71,6 +72,7 @@ All `--line` / `--col` values are 0-indexed (matching LSP protocol).
 |-----------|------|----------|------|
 | `compile_commands_dir` | string | 自動検出 | `compile_commands.json` が存在するディレクトリ |
 | `index_file` | string | 自動検出 | 事前ビルド済みインデックスファイル (.idx) のパス |
+| `no_index` | bool | `false` | `true` にするとインデックスファイルの自動検出・使用を無効化 |
 | `clangd_path` | string | `"clangd"` | clangd バイナリのパス |
 | `timeout` | number | `30` | LSP リクエストのタイムアウト（秒） |
 | `background_index` | bool | `true` | バックグラウンドインデックスの有効/無効 |
@@ -109,6 +111,7 @@ index ファイルが見つからない場合、`start` コマンドのレスポ
 | `--project-root <dir>` | `.` (cwd) | プロジェクトルートディレクトリ |
 | `--compile-commands-dir <dir>` | 自動検出 | `compile_commands.json` があるディレクトリ |
 | `--index-file <path>` | 自動検出 | clangd インデックスファイル (.idx) のパス |
+| `--no-index` | — | インデックスファイルの自動検出・使用を無効化 |
 | `--clangd-path <path>` | `clangd` | clangd バイナリのパス |
 | `--timeout <sec>` | `30` | LSP リクエストタイムアウト（秒） |
 | `--oneshot` | — | デーモンなしで実行（コマンドごとに clangd を起動） |

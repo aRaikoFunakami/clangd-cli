@@ -66,6 +66,8 @@ def build_parser():
     parser.add_argument("--index-file",
                         help="Path to clangd index file (.idx). "
                              "Also configurable in .clangd-cli.json or auto-detected.")
+    parser.add_argument("--no-index", action="store_true",
+                        help="Disable index file (skip auto-detection and config)")
     parser.add_argument("--compile-commands-dir",
                         help="Directory containing compile_commands.json")
     parser.add_argument("--clangd-path", default="clangd",
@@ -219,6 +221,7 @@ def main():
                 clangd_path=args.clangd_path,
                 timeout=args.timeout,
                 index_timeout=args.index_timeout,
+                no_index=args.no_index,
             )
             session.ensure_index_ready()
             result = COMMAND_MAP[args.command](session, args)

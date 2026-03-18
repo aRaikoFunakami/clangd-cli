@@ -50,7 +50,7 @@ class ClangdSession:
     def __init__(self, project_root: str, index_file: str = None,
                  compile_commands_dir: str = None, clangd_path: str = "clangd",
                  timeout: float = 30.0, background_index: bool = True,
-                 index_timeout: float = 120.0):
+                 index_timeout: float = 120.0, no_index: bool = False):
         self.project_root = str(Path(project_root).resolve())
         self._opened_files = set()
         self._index_ready = False
@@ -58,13 +58,18 @@ class ClangdSession:
         # Load project config (.clangd-cli.json)
         config = _load_config(self.project_root)
 
-        # 3-tier resolution: CLI arg > config > auto-detect
-        if not index_file:
-            index_file = config.get("index_file") or None
-        if not index_file:
-            index_file = _find_index_file(self.project_root)
-        if index_file and not os.path.isabs(index_file):
-            index_file = str(Path(self.project_root) / index_file)
+        # 3-tier resolution: CLI arg > config > auto-detect (skipped if no_index)
+        if not no_index:
+            no_index = config.get("no_index", False)
+        if no_index:
+            index_file = None
+        else:
+            if not index_file:
+                index_file = config.get("index_file") or None
+            if not index_file:
+                index_file = _find_index_file(self.project_root)
+            if index_file and not os.path.isabs(index_file):
+                index_file = str(Path(self.project_root) / index_file)
         self.index_file = index_file
 
         if not compile_commands_dir:

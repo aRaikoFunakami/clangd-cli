@@ -94,7 +94,8 @@ def _handle_connection(conn: socket.socket, session: ClangdSession,
 
 
 def daemon_main(project_root: str, index_file: str, compile_commands_dir: str,
-                clangd_path: str, timeout: float, index_timeout: float = 120.0):
+                clangd_path: str, timeout: float, index_timeout: float = 120.0,
+                no_index: bool = False):
     sock_path = _socket_path(project_root)
     pid_path = _pid_path(project_root)
 
@@ -109,6 +110,7 @@ def daemon_main(project_root: str, index_file: str, compile_commands_dir: str,
         timeout=timeout,
         background_index=True,
         index_timeout=index_timeout,
+        no_index=no_index,
     )
 
     sys.stderr.write(f"clangd args: {' '.join(session.clangd_args)}\n")
@@ -173,7 +175,8 @@ def daemon_is_alive(project_root: str) -> bool:
 def run_via_daemon(project_root: str, command: str, args) -> dict:
     sock_path = _socket_path(project_root)
     GLOBAL_KEYS = {"project_root", "index_file", "compile_commands_dir",
-                   "clangd_path", "timeout", "index_timeout", "oneshot", "command"}
+                   "clangd_path", "timeout", "index_timeout", "oneshot",
+                   "no_index", "command"}
     cmd_args = {k: v for k, v in vars(args).items()
                 if k not in GLOBAL_KEYS and v is not None}
     return _send_to_socket(sock_path, {"command": command, "args": cmd_args})
@@ -189,9 +192,13 @@ def daemon_start(project_root: str, args):
 
     # Resolve config for response (mirrors session.py logic)
     config = _load_config(project_root)
-    resolved_index = (args.index_file
-                      or config.get("index_file") or None
-                      or _find_index_file(project_root))
+    no_index = getattr(args, "no_index", False) or config.get("no_index", False)
+    if no_index:
+        resolved_index = None
+    else:
+        resolved_index = (args.index_file
+                          or config.get("index_file") or None
+                          or _find_index_file(project_root))
     resolved_ccd = (args.compile_commands_dir
                     or config.get("compile_commands_dir") or None
                     or _find_compile_commands(project_root))
@@ -237,6 +244,7 @@ def daemon_start(project_root: str, args):
                 clangd_path=args.clangd_path,
                 timeout=args.timeout,
                 index_timeout=getattr(args, "index_timeout", 120.0) or 120.0,
+                no_index=no_index,
             )
         except Exception as e:
             Path(_error_path(project_root)).write_text(str(e))
