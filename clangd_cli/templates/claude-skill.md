@@ -18,8 +18,10 @@ Use this skill when asked to:
 ## Invocation pattern
 
 ```
-clangd-cli <command> --file <absolute-path> --line <N> --col <N> [options]
+clangd-cli [global-options] <command> --file <absolute-path> --line <N> --col <N> [command-options]
 ```
+
+- **Global options** (e.g. `--timeout`, `--project-root`) must come **before** the subcommand
 
 - `--file` must be an **absolute path**
 - `--line` and `--col` are **0-indexed**
@@ -29,6 +31,9 @@ clangd-cli <command> --file <absolute-path> --line <N> --col <N> [options]
 
 For full argument details, see [reference.md](reference.md).
 For output JSON Schema: `clangd-cli schema --command <name>`
+
+**Before writing code to parse command output**, always run `clangd-cli schema --command <name>` first.
+Different fields use different types (e.g. `base_method` is a bare `Location` with only `file`/`line`/`column`, not a full symbol object with `name`).
 
 ## Decision flow
 
@@ -49,6 +54,35 @@ For output JSON Schema: `clangd-cli schema --command <name>`
 
 **Do NOT use Grep as a parallel fallback** for structural queries that clangd-cli handles.
 If clangd-cli can answer the question (overrides, callers, references), do not also issue Grep for the same information.
+
+## Handling large output
+
+`impact-analysis` and `describe` can produce large JSON (40KB+).
+
+### 1. `--only` で必要なセクションだけ取得（推奨）
+
+```bash
+clangd-cli impact-analysis --file F --line L --col C --only callers
+clangd-cli describe --file F --line L --col C --only hover
+```
+
+### 2. `jq` で必要なフィールドだけ抽出
+
+```bash
+# caller の一覧（人間可読）
+clangd-cli impact-analysis ... | jq -r '.callers[] | "\(.name) @ \(.location.file):\(.location.line)"'
+
+# describe の hover テキストだけ
+clangd-cli describe ... | jq -r '.hover'
+```
+
+### 3. `--compact` で全体のサイズを半減
+
+```bash
+clangd-cli --compact impact-analysis --file F --line L --col C
+```
+
+**Do not use Read** to view large JSON output directly — pipe through `jq` or use `--only`.
 
 ## Daemon lifecycle
 

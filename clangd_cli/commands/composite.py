@@ -237,6 +237,17 @@ def cmd_impact_analysis(session, args):
     max_nodes = getattr(args, "max_nodes", 100) or 100
     no_virtual = getattr(args, "no_virtual", False)
 
+    # --only / --no-* conflict check
+    only = getattr(args, "only", None)
+    if only:
+        _VALID_SECTIONS = {"callers", "callees", "virtual-dispatch"}
+        if only not in _VALID_SECTIONS:
+            return {"error": True,
+                    "message": f"Invalid --only value: {only}. Must be one of: {', '.join(sorted(_VALID_SECTIONS))}"}
+        if getattr(args, "no_callees", False) or no_virtual:
+            return {"error": True,
+                    "message": "--only and --no-* options cannot be used together"}
+
     # Phase 1: Prepare root (with column fallback)
     uri = session.open_file(args.file)
     root_items = _prepare_call_hierarchy_with_fallback(
@@ -253,7 +264,8 @@ def cmd_impact_analysis(session, args):
 
     # Phase 1b: Callees from root
     callees = []
-    if not getattr(args, "no_callees", False):
+    skip_callees = getattr(args, "no_callees", False) or (only and only != "callees")
+    if not skip_callees:
         try:
             outgoing = session.client.request("callHierarchy/outgoingCalls",
                                               {"item": root_item}, timeout=session.timeout) or []
@@ -270,7 +282,8 @@ def cmd_impact_analysis(session, args):
     files_opened = {args.file}
     is_virtual_override = False
     virtual_dispatch = {"base_method": None, "dispatch_callers": [], "sibling_overrides": []}
-    if not no_virtual:
+    skip_virtual = no_virtual or (only and only != "virtual-dispatch")
+    if not skip_virtual:
         try:
             virtual_dispatch = _explore_virtual_dispatch(
                 session, root_item, uri, files_opened, session.timeout)
@@ -280,9 +293,11 @@ def cmd_impact_analysis(session, args):
 
     # Phase 2: find-references for lambda detection (use resolved position)
     # Skip for virtual overrides — references include all overrides' refs (same noise)
+    # Skip when --only selects a section that doesn't need references
     all_refs = []
     ref_locations = set()
-    if not is_virtual_override:
+    skip_refs = is_virtual_override or (only and only != "callers")
+    if not skip_refs:
         refs_result = session.client.request("textDocument/references", {
             "textDocument": {"uri": uri},
             "position": {"line": resolved_line, "character": resolved_col},
@@ -302,7 +317,8 @@ def cmd_impact_analysis(session, args):
     depth_reached = 0
     truncated = False
 
-    if not is_virtual_override:
+    skip_callers = is_virtual_override or (only and only != "callers")
+    if not skip_callers:
         frontier = deque()
         frontier.append((root_item, 1))
 
@@ -367,7 +383,8 @@ def cmd_impact_analysis(session, args):
     # Phase 4: Detect uncovered references (lambda, macro, etc.)
     # Skip for virtual overrides — Phase 2 refs were skipped, nothing to compare
     uncovered = []
-    if not is_virtual_override:
+    skip_uncovered = is_virtual_override or (only and only != "callers")
+    if not skip_uncovered:
         # Root's own definition/declaration are not "uncovered"
         root_file = uri_to_path(root_item["uri"])
         root_line = root_item.get("selectionRange", root_item.get("range", {})).get("start", {}).get("line", -1)
@@ -407,69 +424,101 @@ def cmd_impact_analysis(session, args):
     if is_virtual_override:
         result["is_virtual_override"] = True
 
+    # Filter result dict based on --only
+    if only == "callers":
+        for key in ("callees", "virtual_dispatch", "is_virtual_override"):
+            result.pop(key, None)
+    elif only == "callees":
+        for key in ("callers", "uncovered_references", "virtual_dispatch",
+                     "stats", "is_virtual_override"):
+            result.pop(key, None)
+    elif only == "virtual-dispatch":
+        for key in ("callees", "callers", "uncovered_references", "stats"):
+            result.pop(key, None)
+
     return result
 
 
 def cmd_describe(session, args):
-    uri = session.open_file(args.file)
     no_callers = getattr(args, "no_callers", False)
     no_callees = getattr(args, "no_callees", False)
+
+    # --only / --no-* conflict check (before any LSP calls)
+    only_raw = getattr(args, "only", None)
+    only_set = set(only_raw.split(",")) if only_raw else None
+    if only_set:
+        _VALID = {"hover", "callers", "callees", "references"}
+        invalid = only_set - _VALID
+        if invalid:
+            return {"error": True,
+                    "message": f"Invalid --only value(s): {', '.join(sorted(invalid))}. Must be from: {', '.join(sorted(_VALID))}"}
+        if no_callers or no_callees:
+            return {"error": True,
+                    "message": "--only and --no-* options cannot be used together"}
+
+    def _want(section):
+        return only_set is None or section in only_set
+
+    uri = session.open_file(args.file)
     result = {}
 
-    # Hover
-    try:
-        hover = session.client.request("textDocument/hover", {
-            "textDocument": {"uri": uri},
-            "position": {"line": args.line, "character": args.column},
-        }, timeout=session.timeout)
-        if hover and hover.get("contents"):
-            contents = hover["contents"]
-            if isinstance(contents, dict):
-                result["hover"] = contents.get("value", str(contents))
-            elif isinstance(contents, str):
-                result["hover"] = contents
-            elif isinstance(contents, list):
-                result["hover"] = "\n".join(
-                    c.get("value", str(c)) if isinstance(c, dict) else str(c)
-                    for c in contents
-                )
-    except Exception:
-        pass
+    # Hover + Definition (definition is included with hover)
+    if _want("hover"):
+        try:
+            hover = session.client.request("textDocument/hover", {
+                "textDocument": {"uri": uri},
+                "position": {"line": args.line, "character": args.column},
+            }, timeout=session.timeout)
+            if hover and hover.get("contents"):
+                contents = hover["contents"]
+                if isinstance(contents, dict):
+                    result["hover"] = contents.get("value", str(contents))
+                elif isinstance(contents, str):
+                    result["hover"] = contents
+                elif isinstance(contents, list):
+                    result["hover"] = "\n".join(
+                        c.get("value", str(c)) if isinstance(c, dict) else str(c)
+                        for c in contents
+                    )
+        except Exception:
+            pass
 
-    # Definition
-    try:
-        defn = session.client.request("textDocument/definition", {
-            "textDocument": {"uri": uri},
-            "position": {"line": args.line, "character": args.column},
-        }, timeout=session.timeout)
-        locs = normalize_locations(defn)
-        if locs:
-            result["definition"] = format_location(locs[0])
-    except Exception:
-        pass
+        try:
+            defn = session.client.request("textDocument/definition", {
+                "textDocument": {"uri": uri},
+                "position": {"line": args.line, "character": args.column},
+            }, timeout=session.timeout)
+            locs = normalize_locations(defn)
+            if locs:
+                result["definition"] = format_location(locs[0])
+        except Exception:
+            pass
 
     # References
-    try:
-        refs = session.client.request("textDocument/references", {
-            "textDocument": {"uri": uri},
-            "position": {"line": args.line, "character": args.column},
-            "context": {"includeDeclaration": True},
-        }, timeout=session.timeout)
-        ref_locs = normalize_locations(refs)
-        if ref_locs:
-            by_file = Counter()
-            for ref in ref_locs:
-                loc = format_location(ref)
-                by_file[loc["file"]] += 1
-            result["references"] = {
-                "total": len(ref_locs),
-                "by_file": dict(by_file),
-            }
-    except Exception:
-        pass
+    if _want("references"):
+        try:
+            refs = session.client.request("textDocument/references", {
+                "textDocument": {"uri": uri},
+                "position": {"line": args.line, "character": args.column},
+                "context": {"includeDeclaration": True},
+            }, timeout=session.timeout)
+            ref_locs = normalize_locations(refs)
+            if ref_locs:
+                by_file = Counter()
+                for ref in ref_locs:
+                    loc = format_location(ref)
+                    by_file[loc["file"]] += 1
+                result["references"] = {
+                    "total": len(ref_locs),
+                    "by_file": dict(by_file),
+                }
+        except Exception:
+            pass
 
     # Call hierarchy - callers (1 level)
-    if not no_callers:
+    want_callers = _want("callers") and not no_callers
+    want_callees = _want("callees") and not no_callees
+    if want_callers or want_callees:
         try:
             items = _prepare_call_hierarchy_with_fallback(
                 session, uri, args.file, args.line, args.column, session.timeout)
@@ -477,17 +526,17 @@ def cmd_describe(session, args):
                 item = items[0]
                 result["symbol"] = format_hierarchy_item(item)
 
-                incoming = session.client.request("callHierarchy/incomingCalls",
-                                                  {"item": item}, timeout=session.timeout) or []
-                callers = []
-                for call in incoming:
-                    entry = format_hierarchy_item(call["from"])
-                    entry["call_sites"] = format_call_sites(call.get("fromRanges", []))
-                    callers.append(entry)
-                result["callers"] = callers
+                if want_callers:
+                    incoming = session.client.request("callHierarchy/incomingCalls",
+                                                      {"item": item}, timeout=session.timeout) or []
+                    callers = []
+                    for call in incoming:
+                        entry = format_hierarchy_item(call["from"])
+                        entry["call_sites"] = format_call_sites(call.get("fromRanges", []))
+                        callers.append(entry)
+                    result["callers"] = callers
 
-                # Callees (1 level)
-                if not no_callees:
+                if want_callees:
                     outgoing = session.client.request("callHierarchy/outgoingCalls",
                                                       {"item": item}, timeout=session.timeout) or []
                     callees = []

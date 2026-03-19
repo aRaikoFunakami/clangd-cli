@@ -176,7 +176,7 @@ def run_via_daemon(project_root: str, command: str, args) -> dict:
     sock_path = _socket_path(project_root)
     GLOBAL_KEYS = {"project_root", "index_file", "compile_commands_dir",
                    "clangd_path", "timeout", "index_timeout", "oneshot",
-                   "no_index", "command"}
+                   "no_index", "command", "compact"}
     cmd_args = {k: v for k, v in vars(args).items()
                 if k not in GLOBAL_KEYS and v is not None}
     return _send_to_socket(sock_path, {"command": command, "args": cmd_args})

@@ -4,6 +4,8 @@ All position-based commands take `--file <abs-path> --line <N> --col <N>` (0-ind
 
 ## Global options
 
+Global options **must be placed before the subcommand** (e.g. `clangd-cli --timeout 60 impact-analysis ...`).
+
 | Option | Description |
 |--------|-------------|
 | `--project-root DIR` | Project root directory (default: cwd) |
@@ -14,6 +16,7 @@ All position-based commands take `--file <abs-path> --line <N> --col <N>` (0-ind
 | `--timeout N` | LSP request timeout in seconds (default: 30) |
 | `--index-timeout N` | Timeout for index readiness in seconds (default: 120) |
 | `--oneshot` | Run without daemon (spawn clangd per command) |
+| `--compact` | Compact JSON output (no indentation) |
 
 ## Core analysis commands
 
@@ -28,6 +31,7 @@ clangd-cli impact-analysis --file F --line L --col C [options]
 | `--max-nodes N` | Maximum number of caller nodes (default: 100) |
 | `--no-virtual` | Skip virtual dispatch exploration (base callers, sibling overrides) |
 | `--no-callees` | Skip outgoing callees from root |
+| `--only SECTION` | Output only specified section (`callers`\|`callees`\|`virtual-dispatch`). Cannot combine with `--no-*` |
 
 ### describe
 Symbol overview: type, references, callers, callees.
@@ -38,6 +42,7 @@ clangd-cli describe --file F --line L --col C [options]
 |--------|-------------|
 | `--no-callers` | Skip incoming callers |
 | `--no-callees` | Skip outgoing callees |
+| `--only SECTIONS` | Output only specified sections (comma-separated: `hover`,`callers`,`callees`,`references`). Cannot combine with `--no-*` |
 
 ### workspace-symbols
 Search workspace symbols by name. No file/line/col needed.

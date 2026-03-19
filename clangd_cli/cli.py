@@ -78,6 +78,8 @@ def build_parser():
                         help="Timeout in seconds for index readiness (default: 120)")
     parser.add_argument("--oneshot", action="store_true",
                         help="Run without daemon (spawn clangd per command)")
+    parser.add_argument("--compact", action="store_true",
+                        help="Compact JSON output (no indentation)")
 
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -166,6 +168,8 @@ def build_parser():
                    help="Skip virtual dispatch exploration (base callers, sibling overrides)")
     p.add_argument("--no-callees", action="store_true",
                    help="Skip outgoing callees from root")
+    p.add_argument("--only",
+                   help="Output only specified section (callers|callees|virtual-dispatch)")
 
     p = sub.add_parser("describe",
                        help="Symbol overview: type, references, callers, callees")
@@ -174,6 +178,8 @@ def build_parser():
                    help="Skip incoming callers")
     p.add_argument("--no-callees", action="store_true",
                    help="Skip outgoing callees")
+    p.add_argument("--only",
+                   help="Output only specified sections (comma-separated: hover,callers,callees,references)")
 
     return parser
 
@@ -237,6 +243,11 @@ def main():
             return result.model_dump(exclude_none=True)
         return result
 
+    def _output(result):
+        serialized = _serialize(result)
+        indent = None if getattr(args, "compact", False) else 2
+        print(json.dumps(serialized, indent=indent))
+
     if args.oneshot:
         session = None
         try:
@@ -251,7 +262,7 @@ def main():
             )
             session.ensure_index_ready()
             result = COMMAND_MAP[args.command](session, args)
-            print(json.dumps(_serialize(result), indent=2))
+            _output(result)
         except Exception as e:
             print(json.dumps({"error": True, "message": str(e)}), file=sys.stderr)
             sys.exit(1)
@@ -271,7 +282,7 @@ def main():
                 sys.exit(1)
         try:
             result = run_via_daemon(project_root, args.command, args)
-            print(json.dumps(_serialize(result), indent=2))
+            _output(result)
         except Exception as e:
             print(json.dumps({"error": True, "message": str(e)}), file=sys.stderr)
             sys.exit(1)
