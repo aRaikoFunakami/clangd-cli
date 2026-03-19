@@ -1,6 +1,6 @@
 ---
 name: clangd-nav
-description: Analyze C++ code impact and navigate symbols using clangd semantic analysis
+description: Analyze C++ code impact, trace callers, find virtual method overrides, and navigate symbols using clangd semantic analysis. Use when asked to understand call chains, analyze modification impact, find implementations of an interface, or resolve type hierarchies in C++ codebases.
 allowed-tools: Bash(clangd-cli *)
 ---
 
@@ -14,6 +14,22 @@ Use this skill when asked to:
 - Trace call chains through the codebase
 - Find all implementations of a virtual method
 - Understand class hierarchies
+
+## Quick start
+
+```bash
+# 1. Find the symbol's exact location
+clangd-cli workspace-symbols --query "HandleEvent"
+
+# 2. Analyze its impact (callers, callees, virtual dispatch)
+clangd-cli impact-analysis --file /abs/path/handler.cpp --line 42 --col 8
+
+# 3. Get a symbol overview
+clangd-cli describe --file /abs/path/handler.cpp --line 42 --col 8 --only hover,callers
+
+# 4. Find all overrides of a virtual method
+clangd-cli goto-implementation --file /abs/path/handler.h --line 15 --col 16
+```
 
 ## Invocation pattern
 
@@ -42,11 +58,15 @@ Different fields use different types (e.g. `base_method` is a bare `Location` wi
 - Do NOT use Grep to find a symbol's definition location — Grep lacks column info, leading to `--col 0` and slow fallback resolution
 
 ### Structural / semantic queries (always use clangd-cli)
-- Impact analysis / caller trace → `impact-analysis`
-- Symbol overview (type, callers, callees) → `describe`
-- Override list for a virtual method → `goto-implementation`
-- Type info for auto/template → `describe` or `hover`
-- Common names (draw, get, set) → clangd-cli avoids false positives
+- Impact analysis / caller trace:
+  `clangd-cli impact-analysis --file F --line L --col C`
+- Symbol overview (type, callers, callees):
+  `clangd-cli describe --file F --line L --col C`
+- Override list for a virtual method:
+  `clangd-cli goto-implementation --file F --line L --col C`
+- Type info for auto/template:
+  `clangd-cli hover --file F --line L --col C`
+- Common names (draw, get, set) → clangd-cli avoids false positives that Grep would produce
 
 ### Performance tips
 - Virtual methods (override, common names like `HandleEvent`) → use `--max-depth 1` or `--no-virtual` initially, expand if needed
@@ -90,8 +110,33 @@ clangd-cli --compact impact-analysis --file F --line L --col C
 
 **Do not use Read** to view large JSON output directly — pipe through `jq` or use `--only`.
 
+## Examples
+
+### Analyze function impact
+
+```bash
+# Find the function
+clangd-cli workspace-symbols --query "ProcessRequest"
+# Use the location from the result
+clangd-cli impact-analysis --file /src/server.cpp --line 120 --col 6
+# Extract just the caller names
+clangd-cli impact-analysis --file /src/server.cpp --line 120 --col 6 --only callers \
+  | jq -r '.callers[] | "\(.name) @ \(.location.file):\(.location.line)"'
+```
+
+### Investigate virtual method dispatch
+
+```bash
+# Find the virtual method
+clangd-cli workspace-symbols --query "OnMessage"
+# List all overrides
+clangd-cli goto-implementation --file /src/handler.h --line 25 --col 18
+# Analyze callers without following virtual dispatch (faster)
+clangd-cli impact-analysis --file /src/handler.h --line 25 --col 18 --no-virtual --only callers
+```
+
 ## Daemon lifecycle
 
 - **Do NOT call `start` or `stop` unless the user explicitly asks.** The daemon auto-starts when any command is executed.
-- If the user asks to start or stop the daemon, do so.
-- If a command returns incomplete results (e.g., empty callers), the index may not be ready yet. Suggest the user run `clangd-cli start --wait` and retry.
+- If the user asks to start the daemon, use `clangd-cli start` (**without** `--wait`). The `--wait` flag blocks for up to 2 minutes and will cause the tool to hang.
+- If a command returns incomplete results (e.g., empty callers), the index may not be ready yet. Suggest the user run `clangd-cli start --wait` in their terminal and retry.

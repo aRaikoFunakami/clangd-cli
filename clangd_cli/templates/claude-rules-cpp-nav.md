@@ -28,9 +28,14 @@ clangd-cli schema --command <name>       # JSON Schema of command output
 - Impact analysis before modifying a function signature → `impact-analysis`
 
 ### Recommended workflow
-1. **`workspace-symbols --query <name>`** — always the first step to get exact file/line/col for any known symbol name
-2. `impact-analysis` or `goto-implementation` — use the exact location from step 1
-3. Only if gaps remain, supplement with Grep
+
+```bash
+# 1. Always start here — get exact file/line/col
+clangd-cli workspace-symbols --query "FunctionName"
+# 2. Analyze with the exact location from step 1
+clangd-cli impact-analysis --file /abs/path.cpp --line L --col C
+# 3. Only if gaps remain, supplement with Grep
+```
 
 **Do NOT** use Grep to find a symbol's definition location — Grep lacks column info, leading to `--col 0` and slow fallback resolution.
 **Do NOT** use Grep to duplicate information that clangd-cli provides (overrides, callers, references).
@@ -51,5 +56,5 @@ Priority: CLI arguments > .clangd-cli.json > auto-detection.
 
 ## Daemon lifecycle (IMPORTANT)
 - **Do NOT call `start` or `stop` unless the user explicitly asks.** The daemon auto-starts when any command is executed.
-- If the user asks to start or stop the daemon, do so.
-- If a command returns incomplete results (e.g., empty callers), the index may not be ready yet. Suggest the user run `clangd-cli start --wait` and retry.
+- If the user asks to start the daemon, use `clangd-cli start` (**without** `--wait`). The `--wait` flag blocks for up to 2 minutes and will cause the tool to hang.
+- If a command returns incomplete results (e.g., empty callers), the index may not be ready yet. Suggest the user run `clangd-cli start --wait` in their terminal and retry.
