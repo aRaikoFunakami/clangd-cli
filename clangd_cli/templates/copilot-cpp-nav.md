@@ -16,7 +16,7 @@ clangd-cli schema --command <name>       # JSON Schema of command output
 `clangd-cli [global-options] <command> [command-options]`
 
 ## When to use (instead of grep)
-- Locate a symbol: `workspace-symbols --query <name>` — find file/line/col by name
+- **Locate a symbol → always start with `workspace-symbols --query <name>`** to get exact file/line/col. Do NOT use Grep for this — Grep lacks column info, leading to `--col 0` and slow fallback resolution.
 - Impact analysis: `impact-analysis` — recursive caller trace + callees + virtual dispatch
 - Override list: `goto-implementation` — find all overrides of a virtual method
 - Symbol overview: `describe` — type + callers + callees
@@ -25,6 +25,10 @@ clangd-cli schema --command <name>       # JSON Schema of command output
 - Class hierarchies: what implements this interface?
 
 **Do not issue Grep in parallel as a fallback** for structural queries that clangd-cli handles.
+
+### Performance tips
+- Virtual methods (override, common names like `HandleEvent`) → use `--max-depth 1` or `--no-virtual` initially, expand if needed
+- Large codebases → use `--only callers` to skip unnecessary phases
 
 ## Prerequisites
 `compile_commands.json` must exist in the project. Auto-detected in project root,

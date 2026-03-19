@@ -38,7 +38,8 @@ Different fields use different types (e.g. `base_method` is a bare `Location` wi
 ## Decision flow
 
 ### Locate a symbol
-- Don't know the file/line/col? → `workspace-symbols --query <name>`
+- Symbol name is known → **always start with `workspace-symbols --query <name>`** to get exact file/line/col
+- Do NOT use Grep to find a symbol's definition location — Grep lacks column info, leading to `--col 0` and slow fallback resolution
 
 ### Structural / semantic queries (always use clangd-cli)
 - Impact analysis / caller trace → `impact-analysis`
@@ -47,6 +48,10 @@ Different fields use different types (e.g. `base_method` is a bare `Location` wi
 - Type info for auto/template → `describe` or `hover`
 - Common names (draw, get, set) → clangd-cli avoids false positives
 
+### Performance tips
+- Virtual methods (override, common names like `HandleEvent`) → use `--max-depth 1` or `--no-virtual` initially, expand if needed
+- Large codebases → use `--only callers` to skip unnecessary phases
+
 ### When to use Grep instead
 - Searching text in comments, strings, or disabled code
 - Regex pattern searches across the project
@@ -54,6 +59,7 @@ Different fields use different types (e.g. `base_method` is a bare `Location` wi
 
 **Do NOT use Grep as a parallel fallback** for structural queries that clangd-cli handles.
 If clangd-cli can answer the question (overrides, callers, references), do not also issue Grep for the same information.
+**Do NOT use Grep to locate a symbol's file/line/col** — use `workspace-symbols` instead.
 
 ## Handling large output
 

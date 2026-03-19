@@ -28,9 +28,16 @@ clangd-cli schema --command <name>       # JSON Schema of command output
 - Impact analysis before modifying a function signature → `impact-analysis`
 
 ### Recommended workflow
-`workspace-symbols` → `impact-analysis` (or `goto-implementation`) → only if gaps remain, supplement with Grep
+1. **`workspace-symbols --query <name>`** — always the first step to get exact file/line/col for any known symbol name
+2. `impact-analysis` or `goto-implementation` — use the exact location from step 1
+3. Only if gaps remain, supplement with Grep
 
+**Do NOT** use Grep to find a symbol's definition location — Grep lacks column info, leading to `--col 0` and slow fallback resolution.
 **Do NOT** use Grep to duplicate information that clangd-cli provides (overrides, callers, references).
+
+### Performance tips
+- Virtual methods (override, common names like `HandleEvent`) → use `--max-depth 1` or `--no-virtual` initially, expand if needed
+- Large codebases → use `--only callers` to skip unnecessary phases
 
 ## Prerequisites
 `compile_commands.json` must exist in the project. clangd-cli auto-detects it
