@@ -4,6 +4,17 @@ applyTo: "**/*.{cpp,cc,h,hh}"
 
 # clangd-cli for C++ Navigation
 
+## Required workflow for C++ symbol investigation
+
+```
+1. clangd-cli workspace-symbols --query "Name"          # ALWAYS start here
+2. clangd-cli impact-analysis --file F --line L --col C  # trace callers/callees
+3. Only if gaps remain, supplement with Grep              # text/comment search only
+```
+
+**Do NOT start with Grep** to locate symbols — Grep lacks column info, leading to `--col 0` and slow fallback resolution.
+**Do NOT use Grep** to duplicate information that clangd-cli provides (overrides, callers, references).
+
 **Always check `--help` before running a command you are unsure about.**
 
 ```
@@ -16,25 +27,12 @@ clangd-cli schema --command <name>       # JSON Schema of command output
 `clangd-cli [global-options] <command> [command-options]`
 
 ## When to use (instead of grep)
-- **Locate a symbol → always start with `workspace-symbols --query <name>`** to get exact file/line/col. Do NOT use Grep for this — Grep lacks column info, leading to `--col 0` and slow fallback resolution.
 - Impact analysis: `impact-analysis` — recursive caller trace + callees + virtual dispatch
 - Override list: `goto-implementation` — find all overrides of a virtual method
 - Symbol overview: `describe` — type + callers + callees
 - Common names: draw, get, set, create, handle, update, etc.
 - Type queries: what type is this auto variable?
 - Class hierarchies: what implements this interface?
-
-### Recommended workflow
-
-```bash
-# 1. Always start here — get exact file/line/col
-clangd-cli workspace-symbols --query "FunctionName"
-# 2. Analyze with the exact location from step 1
-clangd-cli impact-analysis --file /abs/path.cpp --line L --col C
-# 3. Only if gaps remain, supplement with Grep
-```
-
-**Do not issue Grep in parallel as a fallback** for structural queries that clangd-cli handles.
 
 ### Performance tips
 - Virtual methods (override, common names like `HandleEvent`) → use `--max-depth 1` or `--no-virtual` initially, expand if needed

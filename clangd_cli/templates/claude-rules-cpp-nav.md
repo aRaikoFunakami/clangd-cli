@@ -8,6 +8,17 @@ paths:
 
 # clangd-cli Usage Guide
 
+## Required workflow for C++ symbol investigation
+
+```
+1. clangd-cli workspace-symbols --query "Name"          # ALWAYS start here
+2. clangd-cli impact-analysis --file F --line L --col C  # trace callers/callees
+3. Only if gaps remain, supplement with Grep              # text/comment search only
+```
+
+**Do NOT start with Grep** to locate symbols — Grep lacks column info, leading to `--col 0` and slow fallback resolution.
+**Do NOT use Grep** to duplicate information that clangd-cli provides (overrides, callers, references).
+
 **Always check `--help` before running a command you are unsure about.**
 
 ```
@@ -20,25 +31,11 @@ clangd-cli schema --command <name>       # JSON Schema of command output
 `clangd-cli [global-options] <command> [command-options]`
 
 ## When to use clangd-cli (instead of grep)
-- Locating a symbol by name → `workspace-symbols`
 - Tracing callers of a function (especially common names) → `impact-analysis`
 - Finding all references to a specific symbol → `find-references`
 - Understanding type hierarchies and virtual dispatch → `type-hierarchy-*`, `impact-analysis`
 - Getting type information for auto variables or templates → `describe`, `hover`
 - Impact analysis before modifying a function signature → `impact-analysis`
-
-### Recommended workflow
-
-```bash
-# 1. Always start here — get exact file/line/col
-clangd-cli workspace-symbols --query "FunctionName"
-# 2. Analyze with the exact location from step 1
-clangd-cli impact-analysis --file /abs/path.cpp --line L --col C
-# 3. Only if gaps remain, supplement with Grep
-```
-
-**Do NOT** use Grep to find a symbol's definition location — Grep lacks column info, leading to `--col 0` and slow fallback resolution.
-**Do NOT** use Grep to duplicate information that clangd-cli provides (overrides, callers, references).
 
 ### Performance tips
 - Virtual methods (override, common names like `HandleEvent`) → use `--max-depth 1` or `--no-virtual` initially, expand if needed
