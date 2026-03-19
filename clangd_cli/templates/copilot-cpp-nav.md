@@ -12,6 +12,9 @@ clangd-cli <command> --help              # show command-specific arguments
 clangd-cli schema --command <name>       # JSON Schema of command output
 ```
 
+**Global options** (`--timeout`, `--project-root`, etc.) **must come before the subcommand**:
+`clangd-cli [global-options] <command> [command-options]`
+
 ## When to use (instead of grep)
 - Locate a symbol: `workspace-symbols --query <name>` — find file/line/col by name
 - Impact analysis: `impact-analysis` — recursive caller trace + callees + virtual dispatch
