@@ -5,8 +5,8 @@ from pathlib import Path
 
 from .session import ClangdSession
 from .commands import COMMAND_MAP
-from .daemon import (daemon_start, daemon_stop, daemon_status, daemon_is_alive,
-                     daemon_wait_ready, run_via_daemon)
+from .daemon import (daemon_start, daemon_stop, daemon_stop_all, daemon_status,
+                     daemon_is_alive, daemon_wait_ready, run_via_daemon)
 from .install import install_instructions
 
 
@@ -88,6 +88,7 @@ def build_parser():
     p.add_argument("--wait", action="store_true",
                    help="Wait until index is ready before returning")
     sub.add_parser("stop", help="Stop clangd daemon")
+    sub.add_parser("stop-all", help="Stop all running clangd-cli daemons")
     sub.add_parser("status", help="Check if daemon is running")
 
     # Schema
@@ -209,6 +210,11 @@ def main():
     if args.command == "stop":
         result = daemon_stop(project_root)
         print(json.dumps(result))
+        return
+
+    if args.command == "stop-all":
+        result = daemon_stop_all()
+        print(json.dumps(result, indent=2))
         return
 
     if args.command == "status":
