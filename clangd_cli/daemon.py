@@ -37,9 +37,9 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
     return buf
 
 
-def _send_to_socket(sock_path: str, request: dict) -> dict:
+def _send_to_socket(sock_path: str, request: dict, timeout: float = 300) -> dict:
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    client.settimeout(300)
+    client.settimeout(timeout)
     client.connect(sock_path)
     try:
         payload = json.dumps(request).encode("utf-8")
@@ -53,44 +53,53 @@ def _send_to_socket(sock_path: str, request: dict) -> dict:
 
 
 def _handle_connection(conn: socket.socket, session: ClangdSession,
-                       shutdown_flag: threading.Event):
-    conn.settimeout(300)
-    length_bytes = _recv_exact(conn, 4)
-    req_length = int.from_bytes(length_bytes, "big")
-    req_bytes = _recv_exact(conn, req_length)
-    request = json.loads(req_bytes.decode("utf-8"))
+                       shutdown_flag: threading.Event,
+                       session_lock: threading.Lock):
+    try:
+        conn.settimeout(300)
+        length_bytes = _recv_exact(conn, 4)
+        req_length = int.from_bytes(length_bytes, "big")
+        req_bytes = _recv_exact(conn, req_length)
+        request = json.loads(req_bytes.decode("utf-8"))
 
-    cmd = request.get("command")
-    if cmd == "stop":
-        response = {"status": "stopping"}
-        shutdown_flag.set()
-    elif cmd == "ping":
-        response = {
-            "status": "ok", "pid": os.getpid(),
-            "clangd_args": session.clangd_args,
-            "opened_files": session.opened_files_count,
-            "index_file": session.index_file,
-            "index_ready": session.index_ready,
-        }
-    elif cmd in COMMAND_MAP:
-        session.ensure_index_ready()
-        cmd_args = argparse.Namespace(**request.get("args", {}))
-        try:
-            handler = COMMAND_MAP[cmd]
-            response = handler(session, cmd_args)
-        except LSPError as e:
-            response = {"error": True, "message": str(e), "code": e.code}
-            if e.data is not None:
-                response["data"] = e.data
-        except LSPTimeoutError as e:
-            response = {"error": True, "message": str(e), "timeout": True}
-        except Exception as e:
-            response = {"error": True, "message": str(e)}
-    else:
-        response = {"error": True, "message": f"Unknown command: {cmd}"}
+        cmd = request.get("command")
+        if cmd == "stop":
+            response = {"status": "stopping"}
+            shutdown_flag.set()
+        elif cmd == "ping":
+            response = {
+                "status": "ok", "pid": os.getpid(),
+                "clangd_args": session.clangd_args,
+                "opened_files": session.opened_files_count,
+                "index_file": session.index_file,
+                "index_ready": session.index_ready,
+                "busy": session_lock.locked(),
+            }
+        elif cmd in COMMAND_MAP:
+            with session_lock:
+                session.ensure_index_ready()
+                cmd_args = argparse.Namespace(**request.get("args", {}))
+                try:
+                    handler = COMMAND_MAP[cmd]
+                    response = handler(session, cmd_args)
+                except LSPError as e:
+                    response = {"error": True, "message": str(e), "code": e.code}
+                    if e.data is not None:
+                        response["data"] = e.data
+                except LSPTimeoutError as e:
+                    response = {"error": True, "message": str(e), "timeout": True}
+                except Exception as e:
+                    response = {"error": True, "message": str(e)}
+        else:
+            response = {"error": True, "message": f"Unknown command: {cmd}"}
 
-    payload = json.dumps(response).encode("utf-8")
-    conn.sendall(len(payload).to_bytes(4, "big") + payload)
+        payload = json.dumps(response).encode("utf-8")
+        conn.sendall(len(payload).to_bytes(4, "big") + payload)
+    except Exception as e:
+        sys.stderr.write(f"Connection error: {e}\n")
+        sys.stderr.flush()
+    finally:
+        conn.close()
 
 
 def daemon_main(project_root: str, index_file: str, compile_commands_dir: str,
@@ -125,6 +134,7 @@ def daemon_main(project_root: str, index_file: str, compile_commands_dir: str,
         f.write(str(os.getpid()))
 
     shutdown_flag = threading.Event()
+    session_lock = threading.Lock()
 
     def handle_signal(signum, frame):
         shutdown_flag.set()
@@ -143,13 +153,12 @@ def daemon_main(project_root: str, index_file: str, compile_commands_dir: str,
         except OSError:
             break
 
-        try:
-            _handle_connection(conn, session, shutdown_flag)
-        except Exception as e:
-            sys.stderr.write(f"Connection error: {e}\n")
-            sys.stderr.flush()
-        finally:
-            conn.close()
+        t = threading.Thread(
+            target=_handle_connection,
+            args=(conn, session, shutdown_flag, session_lock),
+            daemon=True,
+        )
+        t.start()
 
     session.shutdown()
     server.close()
@@ -166,7 +175,7 @@ def daemon_is_alive(project_root: str) -> bool:
     if not os.path.exists(sock_path):
         return False
     try:
-        resp = _send_to_socket(sock_path, {"command": "ping"})
+        resp = _send_to_socket(sock_path, {"command": "ping"}, timeout=30)
         return resp.get("status") == "ok"
     except Exception:
         return False
@@ -255,9 +264,37 @@ def daemon_stop(project_root: str):
     if not daemon_is_alive(project_root):
         return {"status": "not_running"}
     try:
-        return _send_to_socket(_socket_path(project_root), {"command": "stop"})
+        return _send_to_socket(_socket_path(project_root), {"command": "stop"},
+                               timeout=30)
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+def daemon_stop_all(timeout: float = 30):
+    """Stop all running clangd-cli daemons by scanning /tmp for sockets."""
+    import glob as glob_mod
+    results = []
+    for sock_path in glob_mod.glob("/tmp/clangd-cli-*.sock"):
+        try:
+            resp = _send_to_socket(sock_path, {"command": "ping"},
+                                   timeout=timeout)
+            pid = resp.get("pid")
+        except Exception:
+            # Socket exists but daemon is not responding — stale socket
+            try:
+                os.unlink(sock_path)
+            except OSError:
+                pass
+            results.append({"socket": sock_path, "status": "stale_removed"})
+            continue
+        try:
+            _send_to_socket(sock_path, {"command": "stop"}, timeout=timeout)
+            results.append({"socket": sock_path, "pid": pid, "status": "stopped"})
+        except Exception as e:
+            results.append({"socket": sock_path, "pid": pid,
+                            "status": "error", "message": str(e)})
+    return {"stopped": len([r for r in results if r["status"] == "stopped"]),
+            "details": results}
 
 
 def daemon_wait_ready(project_root: str, index_timeout: float = 120.0):
@@ -268,7 +305,7 @@ def daemon_wait_ready(project_root: str, index_timeout: float = 120.0):
 
     while time.monotonic() < deadline:
         try:
-            resp = _send_to_socket(sock_path, {"command": "ping"})
+            resp = _send_to_socket(sock_path, {"command": "ping"}, timeout=30)
             if resp.get("index_ready"):
                 return resp
         except Exception:
@@ -287,5 +324,6 @@ def daemon_wait_ready(project_root: str, index_timeout: float = 120.0):
 
 def daemon_status(project_root: str):
     if daemon_is_alive(project_root):
-        return _send_to_socket(_socket_path(project_root), {"command": "ping"})
+        return _send_to_socket(_socket_path(project_root), {"command": "ping"},
+                               timeout=30)
     return {"status": "not_running"}
