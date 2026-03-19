@@ -13,8 +13,8 @@ def _read_template(name: str) -> str:
 
 FILES = [
     (".claude/rules/cpp-navigation.md", "claude-rules-cpp-nav.md"),
-    (".claude/skills/clangd-nav/SKILL.md", "claude-skill.md"),
-    (".claude/skills/clangd-nav/reference.md", "claude-skill-reference.md"),
+    (".claude/skills/clangd-cli/SKILL.md", "claude-skill.md"),
+    (".claude/skills/clangd-cli/reference.md", "claude-skill-reference.md"),
     (".github/instructions/cpp-navigation.instructions.md", "copilot-cpp-nav.md"),
 ]
 
@@ -37,8 +37,8 @@ CLAUDE_PERMISSIONS = [
     "Bash(jq *)",
     "Bash(date *)",
     "Bash(cat *)",
-    "Skill(clangd-nav)",
-    "Skill(clangd-nav:*)",
+    "Skill(clangd-cli)",
+    "Skill(clangd-cli:*)",
 ]
 
 

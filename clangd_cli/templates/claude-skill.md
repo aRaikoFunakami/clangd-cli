@@ -1,7 +1,18 @@
 ---
-name: clangd-nav
+name: clangd-cli
 description: Analyze C++ code impact, trace callers, find virtual method overrides, and navigate symbols using clangd semantic analysis. Use when asked to understand call chains, analyze modification impact, find implementations of an interface, or resolve type hierarchies in C++ codebases.
-allowed-tools: Bash(clangd-cli *)
+allowed-tools:
+  - Bash(clangd-cli *)
+  - Bash(clangd-cli * 2>/dev/null)
+  - Bash(clangd-cli *|jq *)
+  - Bash(clangd-cli * 2>/dev/null|jq *)
+  - Bash(clangd-cli *|head *)
+  - Bash(clangd-cli * 2>/dev/null|head *)
+  - Bash(clangd-cli *|grep *)
+  - Bash(clangd-cli * 2>/dev/null|grep *)
+  - Bash(jq *)
+  - Bash(date *)
+  - Bash(cat *)
 ---
 
 # C++ Semantic Navigation
