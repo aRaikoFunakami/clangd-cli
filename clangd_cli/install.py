@@ -27,6 +27,11 @@ CREATE_IF_MISSING = [
 # Permissions to add to .claude/settings.local.json
 CLAUDE_PERMISSIONS = [
     "Bash(clangd-cli *)",
+    "Bash(clangd-cli *|jq *)",
+    "Bash(clangd-cli *|head *)",
+    "Bash(clangd-cli *|grep *)",
+    "Bash(date *)",
+    "Bash(cat *)",
     "Skill(clangd-nav)",
     "Skill(clangd-nav:*)",
 ]
