@@ -1,6 +1,8 @@
 """Generate AI assistant instruction files for clangd-cli usage."""
 
 import json
+import os
+import stat
 import sys
 from pathlib import Path
 
@@ -16,7 +18,13 @@ FILES = [
     (".claude/skills/change-impact/SKILL.md", "claude-skill.md"),
     (".claude/skills/change-impact/reference.md", "claude-skill-reference.md"),
     (".claude/skills/change-impact/investigation-workflow.md", "claude-skill-investigation.md"),
+    (".claude/hooks/clangd-cli-approve.py", "claude-hook-pretooluse.py"),
     (".github/instructions/cpp-navigation.instructions.md", "copilot-cpp-nav.md"),
+]
+
+# Hook script that needs executable permission
+EXECUTABLE_FILES = [
+    ".claude/hooks/clangd-cli-approve.py",
 ]
 
 CREATE_IF_MISSING = [
@@ -26,21 +34,9 @@ CREATE_IF_MISSING = [
 ]
 
 # Permissions to add to .claude/settings.local.json
+# Note: clangd-cli Bash commands are auto-approved by the PreToolUse hook
+# (.claude/hooks/clangd-cli-approve.py) instead of static permission patterns.
 CLAUDE_PERMISSIONS = [
-    "Bash(clangd-cli *)",
-    "Bash(clangd-cli * 2>/dev/null)",
-    "Bash(clangd-cli *|jq *)",
-    "Bash(clangd-cli * 2>/dev/null|jq *)",
-    "Bash(clangd-cli *| jq *)",
-    "Bash(clangd-cli * 2>/dev/null | jq *)",
-    "Bash(clangd-cli *|head *)",
-    "Bash(clangd-cli * 2>/dev/null|head *)",
-    "Bash(clangd-cli *| head *)",
-    "Bash(clangd-cli * 2>/dev/null | head *)",
-    "Bash(clangd-cli *|grep *)",
-    "Bash(clangd-cli * 2>/dev/null|grep *)",
-    "Bash(clangd-cli *| grep *)",
-    "Bash(clangd-cli * 2>/dev/null | grep *)",
     "Bash(jq *)",
     "Bash(date *)",
     "Bash(cat *)",
@@ -48,6 +44,17 @@ CLAUDE_PERMISSIONS = [
     "Skill(change-impact)",
     "Skill(change-impact:*)",
 ]
+
+# PreToolUse hook configuration for .claude/settings.local.json
+CLAUDE_HOOK = {
+    "matcher": "Bash",
+    "hooks": [
+        {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/clangd-cli-approve.py",
+        }
+    ],
+}
 
 
 def _indent(text: str, prefix: str) -> str:
@@ -71,7 +78,7 @@ def _confirm(prompt: str, default: bool = True) -> bool:
 
 
 def _update_claude_settings(root: Path) -> dict:
-    """Add clangd-cli permissions to .claude/settings.local.json.
+    """Add clangd-cli permissions and hooks to .claude/settings.local.json.
 
     Returns dict with 'added' (list of new permissions) and 'existed' (already present).
     """
@@ -82,6 +89,9 @@ def _update_claude_settings(root: Path) -> dict:
     else:
         settings = {}
 
+    dirty = False
+
+    # --- permissions ---
     permissions = settings.setdefault("permissions", {})
     allow_list = permissions.setdefault("allow", [])
 
@@ -95,10 +105,28 @@ def _update_claude_settings(root: Path) -> dict:
             added.append(perm)
 
     if added:
+        dirty = True
+
+    # --- PreToolUse hook ---
+    hooks = settings.setdefault("hooks", {})
+    pre_tool_use = hooks.setdefault("PreToolUse", [])
+
+    hook_command = CLAUDE_HOOK["hooks"][0]["command"]
+    hook_exists = any(
+        any(h.get("command") == hook_command for h in entry.get("hooks", []))
+        for entry in pre_tool_use
+    )
+    if not hook_exists:
+        pre_tool_use.append(CLAUDE_HOOK)
+        dirty = True
+
+    if dirty:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 
-    return {"added": added, "existed": existed}
+    result = {"added": added, "existed": existed}
+    result["hook_installed"] = not hook_exists
+    return result
 
 
 def install_instructions(project_root: str, interactive: bool = False) -> dict:
@@ -119,6 +147,13 @@ def install_instructions(project_root: str, interactive: bool = False) -> dict:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(_read_template(template_name))
         created.append(rel_path)
+
+    # Make hook scripts executable
+    for rel_path in EXECUTABLE_FILES:
+        path = root / rel_path
+        if path.exists():
+            st = path.stat()
+            path.chmod(st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     # Files that are created only if they don't exist
     for rel_path, template_name, lstrip in CREATE_IF_MISSING:
@@ -164,12 +199,14 @@ def install_instructions(project_root: str, interactive: bool = False) -> dict:
         result["permissions_existed"] = settings_result["existed"]
     if settings_result.get("skipped"):
         result["permissions_skipped"] = settings_result["skipped"]
+    if settings_result.get("hook_installed"):
+        result["hook_installed"] = True
 
     return result
 
 
 def _check_claude_settings_needed(root: Path) -> bool:
-    """Check if any CLAUDE_PERMISSIONS are missing from settings."""
+    """Check if any CLAUDE_PERMISSIONS or hooks are missing from settings."""
     settings_path = root / ".claude" / "settings.local.json"
     if not settings_path.exists():
         return True
@@ -177,5 +214,17 @@ def _check_claude_settings_needed(root: Path) -> bool:
         settings = json.loads(settings_path.read_text())
     except (json.JSONDecodeError, OSError):
         return True
+
+    # Check permissions
     allow_list = settings.get("permissions", {}).get("allow", [])
-    return any(perm not in allow_list for perm in CLAUDE_PERMISSIONS)
+    if any(perm not in allow_list for perm in CLAUDE_PERMISSIONS):
+        return True
+
+    # Check hook
+    hook_command = CLAUDE_HOOK["hooks"][0]["command"]
+    pre_tool_use = settings.get("hooks", {}).get("PreToolUse", [])
+    hook_exists = any(
+        any(h.get("command") == hook_command for h in entry.get("hooks", []))
+        for entry in pre_tool_use
+    )
+    return not hook_exists
