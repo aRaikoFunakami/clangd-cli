@@ -232,6 +232,161 @@ def _format_caller(item, depth, from_ranges):
     return entry
 
 
+def _run_impact_trace(session, root_item, uri, files_opened, *,
+                      max_depth=5, max_nodes=100,
+                      no_virtual=False, no_callees=False,
+                      only=None):
+    """Core impact trace logic extracted from cmd_impact_analysis.
+
+    Returns dict with:
+        callers, callees, uncovered_references, virtual_dispatch,
+        is_virtual_override, stats
+    """
+    # Callees from root
+    callees = []
+    skip_callees_flag = no_callees or (only and only != "callees")
+    if not skip_callees_flag:
+        try:
+            outgoing = session.client.request("callHierarchy/outgoingCalls",
+                                              {"item": root_item}, timeout=session.timeout) or []
+            for call in outgoing:
+                callees.append(format_hierarchy_item(call["to"]))
+        except Exception:
+            pass
+
+    # Early virtual override detection
+    is_virtual_override = False
+    virtual_dispatch = {"base_method": None, "dispatch_callers": [], "sibling_overrides": []}
+    skip_virtual = no_virtual or (only and only != "virtual-dispatch")
+    if not skip_virtual:
+        try:
+            virtual_dispatch = _explore_virtual_dispatch(
+                session, root_item, uri, files_opened, session.timeout)
+            is_virtual_override = virtual_dispatch.get("base_method") is not None
+        except Exception:
+            pass
+
+    # find-references for lambda detection
+    root_pos = root_item.get("selectionRange", root_item.get("range", {})).get("start", {})
+    resolved_line = root_pos.get("line", 0)
+    resolved_col = root_pos.get("character", 0)
+
+    all_refs = []
+    ref_locations = set()
+    skip_refs = is_virtual_override or (only and only != "callers")
+    if not skip_refs:
+        refs_result = session.client.request("textDocument/references", {
+            "textDocument": {"uri": uri},
+            "position": {"line": resolved_line, "character": resolved_col},
+            "context": {"includeDeclaration": True},
+        }, timeout=session.timeout)
+        all_refs = normalize_locations(refs_result)
+        for ref in all_refs:
+            loc = format_location(ref)
+            ref_locations.add((loc["file"], loc["line"], loc["column"]))
+
+    # BFS caller traversal
+    visited = {_node_key(root_item)}
+    callers = []
+    call_hierarchy_locations = set()
+    depth_reached = 0
+    truncated = False
+
+    skip_callers_flag = is_virtual_override or (only and only != "callers")
+    if not skip_callers_flag:
+        frontier = deque()
+        frontier.append((root_item, 1))
+
+        while frontier and len(callers) < max_nodes:
+            current_item, depth = frontier.popleft()
+            if depth > max_depth:
+                truncated = True
+                continue
+            depth_reached = max(depth_reached, depth)
+
+            # Open file for this node if needed
+            node_file = uri_to_path(current_item["uri"])
+            if node_file not in files_opened:
+                session.open_file(node_file)
+                files_opened.add(node_file)
+
+            # Get incoming calls
+            try:
+                node_pos = current_item.get("selectionRange", current_item.get("range", {})).get("start", {})
+                prepare_items = session.client.request("textDocument/prepareCallHierarchy", {
+                    "textDocument": {"uri": current_item["uri"]},
+                    "position": {"line": node_pos.get("line", 0), "character": node_pos.get("character", 0)},
+                }, timeout=session.timeout)
+                if not prepare_items:
+                    continue
+                if not isinstance(prepare_items, list):
+                    prepare_items = [prepare_items]
+                prepared = prepare_items[0]
+
+                incoming = session.client.request("callHierarchy/incomingCalls",
+                                                  {"item": prepared}, timeout=session.timeout) or []
+            except Exception:
+                continue
+
+            for call in incoming:
+                caller_item = call["from"]
+                key = _node_key(caller_item)
+                from_ranges = call.get("fromRanges", [])
+
+                caller_file = uri_to_path(caller_item["uri"])
+                for r in from_ranges:
+                    call_hierarchy_locations.add(
+                        (caller_file, r["start"]["line"], r["start"]["character"])
+                    )
+
+                if key in visited:
+                    continue
+                visited.add(key)
+
+                entry = _format_caller(caller_item, depth, from_ranges)
+                callers.append(entry)
+
+                if len(callers) >= max_nodes:
+                    truncated = True
+                    break
+
+                if depth < max_depth:
+                    frontier.append((caller_item, depth + 1))
+
+    # Detect uncovered references
+    uncovered = []
+    skip_uncovered = is_virtual_override or (only and only != "callers")
+    if not skip_uncovered:
+        root_file = uri_to_path(root_item["uri"])
+        root_line = root_item.get("selectionRange", root_item.get("range", {})).get("start", {}).get("line", -1)
+
+        for file, line, col in ref_locations:
+            if file == root_file and line == root_line:
+                continue
+            if (file, line, col) in call_hierarchy_locations:
+                continue
+            uncovered.append({
+                "file": file, "line": line, "column": col,
+                "note": "Reference not found in call hierarchy (possible lambda/macro)"
+            })
+
+    return {
+        "callers": callers,
+        "callees": callees,
+        "uncovered_references": uncovered,
+        "virtual_dispatch": virtual_dispatch,
+        "is_virtual_override": is_virtual_override,
+        "stats": {
+            "depth_reached": depth_reached,
+            "total_callers": len(callers),
+            "total_callees": len(callees),
+            "total_references": len(all_refs),
+            "truncated": truncated,
+            "files_opened": len(files_opened),
+        },
+    }
+
+
 def cmd_impact_analysis(session, args):
     max_depth = getattr(args, "max_depth", 5) or 5
     max_nodes = getattr(args, "max_nodes", 100) or 100
@@ -257,171 +412,26 @@ def cmd_impact_analysis(session, args):
     root_item = root_items[0]
     root_formatted = format_hierarchy_item(root_item)
 
-    # Use resolved position (may differ from args if fallback was used)
-    root_pos = root_item.get("selectionRange", root_item.get("range", {})).get("start", {})
-    resolved_line = root_pos.get("line", args.line)
-    resolved_col = root_pos.get("character", args.column)
-
-    # Phase 1b: Callees from root
-    callees = []
-    skip_callees = getattr(args, "no_callees", False) or (only and only != "callees")
-    if not skip_callees:
-        try:
-            outgoing = session.client.request("callHierarchy/outgoingCalls",
-                                              {"item": root_item}, timeout=session.timeout) or []
-            for call in outgoing:
-                callees.append(format_hierarchy_item(call["to"]))
-        except Exception:
-            pass
-
-    # Early virtual override detection (before Phases 2-4)
-    # When root is a virtual override, clangd's incomingCalls returns callers for
-    # ALL overrides in the hierarchy, producing unfilterable noise.
-    # Detect this early so we can skip Phases 2-4 and rely on Phase 5's
-    # dispatch_callers instead.
     files_opened = {args.file}
-    is_virtual_override = False
-    virtual_dispatch = {"base_method": None, "dispatch_callers": [], "sibling_overrides": []}
-    skip_virtual = no_virtual or (only and only != "virtual-dispatch")
-    if not skip_virtual:
-        try:
-            virtual_dispatch = _explore_virtual_dispatch(
-                session, root_item, uri, files_opened, session.timeout)
-            is_virtual_override = virtual_dispatch.get("base_method") is not None
-        except Exception:
-            pass
-
-    # Phase 2: find-references for lambda detection (use resolved position)
-    # Skip for virtual overrides — references include all overrides' refs (same noise)
-    # Skip when --only selects a section that doesn't need references
-    all_refs = []
-    ref_locations = set()
-    skip_refs = is_virtual_override or (only and only != "callers")
-    if not skip_refs:
-        refs_result = session.client.request("textDocument/references", {
-            "textDocument": {"uri": uri},
-            "position": {"line": resolved_line, "character": resolved_col},
-            "context": {"includeDeclaration": True},
-        }, timeout=session.timeout)
-        all_refs = normalize_locations(refs_result)
-        for ref in all_refs:
-            loc = format_location(ref)
-            ref_locations.add((loc["file"], loc["line"], loc["column"]))
-
-    # Phase 3: BFS caller traversal
-    # Skip for virtual overrides — incomingCalls returns callers across the entire
-    # inheritance hierarchy, not just this override. Use dispatch_callers instead.
-    visited = {_node_key(root_item)}
-    callers = []
-    call_hierarchy_locations = set()
-    depth_reached = 0
-    truncated = False
-
-    skip_callers = is_virtual_override or (only and only != "callers")
-    if not skip_callers:
-        frontier = deque()
-        frontier.append((root_item, 1))
-
-        while frontier and len(callers) < max_nodes:
-            current_item, depth = frontier.popleft()
-            if depth > max_depth:
-                truncated = True
-                continue
-            depth_reached = max(depth_reached, depth)
-
-            # Open file for this node if needed
-            node_file = uri_to_path(current_item["uri"])
-            if node_file not in files_opened:
-                session.open_file(node_file)
-                files_opened.add(node_file)
-
-            # Get incoming calls
-            try:
-                # Prepare at this node's position
-                node_pos = current_item.get("selectionRange", current_item.get("range", {})).get("start", {})
-                prepare_items = session.client.request("textDocument/prepareCallHierarchy", {
-                    "textDocument": {"uri": current_item["uri"]},
-                    "position": {"line": node_pos.get("line", 0), "character": node_pos.get("character", 0)},
-                }, timeout=session.timeout)
-                if not prepare_items:
-                    continue
-                if not isinstance(prepare_items, list):
-                    prepare_items = [prepare_items]
-                prepared = prepare_items[0]
-
-                incoming = session.client.request("callHierarchy/incomingCalls",
-                                                  {"item": prepared}, timeout=session.timeout) or []
-            except Exception:
-                continue
-
-            for call in incoming:
-                caller_item = call["from"]
-                key = _node_key(caller_item)
-                from_ranges = call.get("fromRanges", [])
-
-                # Record call sites as covered by call-hierarchy
-                caller_file = uri_to_path(caller_item["uri"])
-                for r in from_ranges:
-                    call_hierarchy_locations.add(
-                        (caller_file, r["start"]["line"], r["start"]["character"])
-                    )
-
-                if key in visited:
-                    continue
-                visited.add(key)
-
-                entry = _format_caller(caller_item, depth, from_ranges)
-                callers.append(entry)
-
-                if len(callers) >= max_nodes:
-                    truncated = True
-                    break
-
-                if depth < max_depth:
-                    frontier.append((caller_item, depth + 1))
-
-    # Phase 4: Detect uncovered references (lambda, macro, etc.)
-    # Skip for virtual overrides — Phase 2 refs were skipped, nothing to compare
-    uncovered = []
-    skip_uncovered = is_virtual_override or (only and only != "callers")
-    if not skip_uncovered:
-        # Root's own definition/declaration are not "uncovered"
-        root_file = uri_to_path(root_item["uri"])
-        root_line = root_item.get("selectionRange", root_item.get("range", {})).get("start", {}).get("line", -1)
-
-        for file, line, col in ref_locations:
-            # Skip the root's own position
-            if file == root_file and line == root_line:
-                continue
-            # Skip if covered by call-hierarchy
-            if (file, line, col) in call_hierarchy_locations:
-                continue
-            uncovered.append({
-                "file": file, "line": line, "column": col,
-                "note": "Reference not found in call hierarchy (possible lambda/macro)"
-            })
-
-    # Phase 5: Virtual dispatch
-    # Already computed during early detection — no duplicate work needed.
+    trace = _run_impact_trace(
+        session, root_item, uri, files_opened,
+        max_depth=max_depth, max_nodes=max_nodes,
+        no_virtual=no_virtual,
+        no_callees=getattr(args, "no_callees", False),
+        only=only,
+    )
 
     result = {
         "found": True,
         "root": root_formatted,
-        "callees": callees,
-        "callers": callers,
-        "uncovered_references": uncovered,
-        "virtual_dispatch": virtual_dispatch,
-        "stats": {
-            "depth_reached": depth_reached,
-            "total_callers": len(callers),
-            "total_callees": len(callees),
-            "total_references": len(all_refs),
-            "truncated": truncated,
-            "files_opened": len(files_opened),
-        }
+        "callees": trace["callees"],
+        "callers": trace["callers"],
+        "uncovered_references": trace["uncovered_references"],
+        "virtual_dispatch": trace["virtual_dispatch"],
+        "stats": trace["stats"],
     }
 
-    if is_virtual_override:
+    if trace["is_virtual_override"]:
         result["is_virtual_override"] = True
 
     # Filter result dict based on --only
