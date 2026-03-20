@@ -71,6 +71,7 @@ Different fields use different types (e.g. `base_method` is a bare `Location` wi
 - Common names (draw, get, set) → clangd-cli avoids false positives that Grep would produce
 
 ### Performance tips
+- **Parallel execution**: clangd-cli is daemon-based — independent commands can run concurrently. When multiple queries have no data dependency, issue them in parallel (e.g., multiple `workspace-symbols` lookups, or `hover` + `find-references` on different symbols).
 - Virtual methods (override, common names like `HandleEvent`) → use `--max-depth 1` or `--no-virtual` initially, expand if needed
 - Large codebases → use `--only callers` to skip unnecessary phases
 
@@ -95,6 +96,8 @@ clangd-cli describe --file F --line L --col C --only hover
 ```
 
 ### 2. `jq` で必要なフィールドだけ抽出
+
+**Before writing a `jq` filter**, run `clangd-cli schema --command <name>` to confirm field names and types. Do not assume fields exist based on other commands' output.
 
 ```bash
 # caller の一覧（人間可読）
