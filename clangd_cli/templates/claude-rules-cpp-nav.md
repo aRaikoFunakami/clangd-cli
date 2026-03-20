@@ -36,7 +36,7 @@ clangd-cli schema --command <name>       # JSON Schema of command output
 - Understanding type hierarchies and virtual dispatch → `type-hierarchy-*`, `impact-analysis`
 - Getting type information for auto variables or templates → `describe`, `hover`
 - Impact analysis before modifying a function signature → `impact-analysis`
-- Structured impact investigation (影響範囲調査) → invoke clangd-cli skill, follow investigation-workflow.md
+- Structured impact investigation (影響範囲調査) → invoke change-impact skill, follow investigation-workflow.md
 
 ### Performance tips
 - Virtual methods (override, common names like `HandleEvent`) → use `--max-depth 1` or `--no-virtual` initially, expand if needed
