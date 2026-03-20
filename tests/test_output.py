@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from clangd_cli.cli import build_parser
-from clangd_cli.commands.composite import cmd_impact_analysis, cmd_describe
+from clangd_cli.commands.composite import cmd_impact_analysis, cmd_describe, cmd_investigate
 
 
 # ---------- --compact tests (argparse level) ----------
@@ -158,3 +158,79 @@ class TestDescribeOnly:
         args = parser.parse_args(["describe", "--file", "/f.cpp",
                                   "--line", "0", "--col", "0"])
         assert args.only is None
+
+
+# ---------- --only for investigate ----------
+
+class TestInvestigateOnly:
+    def _make_args(self, **kwargs):
+        defaults = dict(file="/f.cpp", line=10, column=5,
+                        max_depth=5, max_nodes=100,
+                        no_virtual=False, no_callees=False,
+                        no_caller_details=False, no_type_hierarchy=False,
+                        only=None)
+        defaults.update(kwargs)
+        return argparse.Namespace(**defaults)
+
+    def test_only_invalid_value(self):
+        args = self._make_args(only="invalid")
+        result = cmd_investigate(None, args)
+        assert result["error"] is True
+        assert "Invalid --only value" in result["message"]
+
+    def test_only_with_no_virtual_conflict(self):
+        args = self._make_args(only="callers", no_virtual=True)
+        result = cmd_investigate(None, args)
+        assert result["error"] is True
+        assert "cannot be used together" in result["message"]
+
+    def test_only_with_no_callees_conflict(self):
+        args = self._make_args(only="callers", no_callees=True)
+        result = cmd_investigate(None, args)
+        assert result["error"] is True
+        assert "cannot be used together" in result["message"]
+
+    def test_only_with_no_caller_details_conflict(self):
+        args = self._make_args(only="callers", no_caller_details=True)
+        result = cmd_investigate(None, args)
+        assert result["error"] is True
+        assert "cannot be used together" in result["message"]
+
+    def test_only_with_no_type_hierarchy_conflict(self):
+        args = self._make_args(only="callers", no_type_hierarchy=True)
+        result = cmd_investigate(None, args)
+        assert result["error"] is True
+        assert "cannot be used together" in result["message"]
+
+    def test_only_comma_separated(self):
+        parser = build_parser()
+        args = parser.parse_args(["investigate", "--file", "/f.cpp",
+                                  "--line", "0", "--col", "0",
+                                  "--only", "callers,caller-details"])
+        assert args.only == "callers,caller-details"
+
+    def test_argparse_defaults(self):
+        parser = build_parser()
+        args = parser.parse_args(["investigate", "--file", "/f.cpp",
+                                  "--line", "0", "--col", "0"])
+        assert args.only is None
+        assert args.max_depth == 5
+        assert args.max_nodes == 100
+        assert args.no_virtual is False
+        assert args.no_callees is False
+        assert args.no_caller_details is False
+        assert args.no_type_hierarchy is False
+
+    def test_argparse_all_flags(self):
+        parser = build_parser()
+        args = parser.parse_args(["investigate", "--file", "/f.cpp",
+                                  "--line", "0", "--col", "0",
+                                  "--max-depth", "3", "--max-nodes", "50",
+                                  "--no-virtual", "--no-callees",
+                                  "--no-caller-details", "--no-type-hierarchy"])
+        assert args.max_depth == 3
+        assert args.max_nodes == 50
+        assert args.no_virtual is True
+        assert args.no_callees is True
+        assert args.no_caller_details is True
+        assert args.no_type_hierarchy is True

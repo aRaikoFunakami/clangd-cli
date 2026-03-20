@@ -25,9 +25,10 @@ from .symbols import (
 )
 from .structure import HighlightSuccess, DocumentLinksSuccess, Highlight, DocumentLink
 from .composite import (
-    ImpactAnalysisSuccess, DescribeSuccess,
+    ImpactAnalysisSuccess, DescribeSuccess, InvestigateSuccess,
     CallerItem, UncoveredRef, DispatchCaller, VirtualDispatch,
     ImpactStats, ReferencesSummary, CallerWithSites,
+    CallerDetail, TypeHierarchyInfo, InvestigateStats,
 )
 from .daemon import (
     DaemonStarted, DaemonAlreadyRunning, DaemonStartTimeout,
@@ -54,9 +55,10 @@ __all__ = [
     # structure
     "HighlightSuccess", "DocumentLinksSuccess", "Highlight", "DocumentLink",
     # composite
-    "ImpactAnalysisSuccess", "DescribeSuccess",
+    "ImpactAnalysisSuccess", "DescribeSuccess", "InvestigateSuccess",
     "CallerItem", "UncoveredRef", "DispatchCaller", "VirtualDispatch",
     "ImpactStats", "ReferencesSummary", "CallerWithSites",
+    "CallerDetail", "TypeHierarchyInfo", "InvestigateStats",
     # daemon
     "DaemonStarted", "DaemonAlreadyRunning", "DaemonStartTimeout",
     "DaemonStopping", "DaemonNotRunning", "DaemonOk", "DaemonError",
@@ -88,6 +90,7 @@ _COMMAND_RESPONSE_TYPES = {
     "document-links": Union[DocumentLinksSuccess, NotFound, ErrorResponse],
     "impact-analysis": Union[ImpactAnalysisSuccess, NotFound, ErrorResponse],
     "describe": Union[DescribeSuccess, NotFound, ErrorResponse],
+    "investigate": Union[InvestigateSuccess, NotFound, ErrorResponse],
     "start": Union[DaemonStarted, DaemonAlreadyRunning, DaemonStartTimeout, DaemonError],
     "stop": Union[DaemonStopping, DaemonNotRunning, DaemonError],
     "status": Union[DaemonOk, DaemonNotRunning],

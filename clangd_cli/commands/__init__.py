@@ -5,7 +5,7 @@ from .symbols import (cmd_file_symbols, cmd_workspace_symbols,
                        cmd_call_hierarchy_in, cmd_call_hierarchy_out,
                        cmd_type_hierarchy_super, cmd_type_hierarchy_sub)
 from .structure import cmd_highlight_symbol, cmd_document_links
-from .composite import cmd_impact_analysis, cmd_describe
+from .composite import cmd_impact_analysis, cmd_describe, cmd_investigate
 
 COMMAND_MAP = {
     "hover": cmd_hover,
@@ -29,4 +29,5 @@ COMMAND_MAP = {
     "document-links": cmd_document_links,
     "impact-analysis": cmd_impact_analysis,
     "describe": cmd_describe,
+    "investigate": cmd_investigate,
 }

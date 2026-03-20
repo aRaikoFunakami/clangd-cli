@@ -86,6 +86,42 @@ class CallerWithSites(BaseModel):
         return v or None
 
 
+class CallerDetail(BaseModel):
+    caller: HierarchyItem
+    hover: Optional[str] = None
+    callees: list[HierarchyItem] = []
+
+
+class TypeHierarchyInfo(BaseModel):
+    supertypes: list[HierarchyItem] = []
+    subtypes: list[HierarchyItem] = []
+
+
+class InvestigateStats(BaseModel):
+    depth_reached: int
+    total_callers: int
+    total_callees: int
+    total_references: int
+    total_caller_details: int
+    truncated: bool
+    files_opened: int
+
+
+class InvestigateSuccess(BaseModel):
+    found: Literal[True]
+    root: HierarchyItem
+    hover: Optional[str] = None
+    definition: Optional[Location] = None
+    callers: list[CallerItem] = []
+    callees: list[HierarchyItem] = []
+    uncovered_references: list[UncoveredRef] = []
+    virtual_dispatch: Optional[VirtualDispatch] = None
+    caller_details: Optional[list[CallerDetail]] = None
+    type_hierarchy: Optional[TypeHierarchyInfo] = None
+    stats: InvestigateStats
+    is_virtual_override: Optional[bool] = None
+
+
 class DescribeSuccess(BaseModel):
     found: Literal[True]
     hover: Optional[str] = None

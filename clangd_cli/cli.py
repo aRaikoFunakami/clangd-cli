@@ -172,6 +172,25 @@ def build_parser():
     p.add_argument("--only",
                    help="Output only specified section (callers|callees|virtual-dispatch)")
 
+    p = sub.add_parser("investigate",
+                       help="Full impact investigation: callers + virtual + caller details + type hierarchy")
+    _add_pos(p)
+    p.add_argument("--max-depth", type=int, default=5,
+                   help="Maximum BFS depth (default: 5)")
+    p.add_argument("--max-nodes", type=int, default=100,
+                   help="Maximum number of caller nodes (default: 100)")
+    p.add_argument("--no-virtual", action="store_true",
+                   help="Skip virtual dispatch exploration")
+    p.add_argument("--no-callees", action="store_true",
+                   help="Skip outgoing callees from root")
+    p.add_argument("--no-caller-details", action="store_true",
+                   help="Skip detailed info for each direct caller")
+    p.add_argument("--no-type-hierarchy", action="store_true",
+                   help="Skip type hierarchy (supertypes/subtypes)")
+    p.add_argument("--only",
+                   help="Output only specified sections (comma-separated: "
+                        "callers,callees,virtual-dispatch,caller-details,type-hierarchy)")
+
     p = sub.add_parser("describe",
                        help="Symbol overview: type, references, callers, callees")
     _add_pos(p)

@@ -1,5 +1,7 @@
 import re
+import threading
 from collections import deque, Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from ..uri import uri_to_path, path_to_uri
@@ -232,15 +234,25 @@ def _format_caller(item, depth, from_ranges):
     return entry
 
 
+def _open_file_safe(session, file_path, lock, opened_set):
+    """Thread-safe file open. Returns URI for the file."""
+    with lock:
+        if file_path in opened_set:
+            return path_to_uri(file_path)
+        uri = session.open_file(file_path)
+        opened_set.add(file_path)
+        return uri
+
+
 def _run_impact_trace(session, root_item, uri, files_opened, *,
                       max_depth=5, max_nodes=100,
                       no_virtual=False, no_callees=False,
-                      only=None):
-    """Core impact trace logic extracted from cmd_impact_analysis.
+                      skip_callers=False, only=None, open_file_lock=None):
+    """Core impact trace logic shared by cmd_impact_analysis and cmd_investigate.
 
     Returns dict with:
         callers, callees, uncovered_references, virtual_dispatch,
-        is_virtual_override, stats
+        is_virtual_override, stats, direct_caller_items (raw LSP items at depth=1)
     """
     # Callees from root
     callees = []
@@ -291,8 +303,9 @@ def _run_impact_trace(session, root_item, uri, files_opened, *,
     call_hierarchy_locations = set()
     depth_reached = 0
     truncated = False
+    direct_caller_items = []  # raw LSP items at depth=1
 
-    skip_callers_flag = is_virtual_override or (only and only != "callers")
+    skip_callers_flag = skip_callers or is_virtual_override or (only and only != "callers")
     if not skip_callers_flag:
         frontier = deque()
         frontier.append((root_item, 1))
@@ -306,7 +319,9 @@ def _run_impact_trace(session, root_item, uri, files_opened, *,
 
             # Open file for this node if needed
             node_file = uri_to_path(current_item["uri"])
-            if node_file not in files_opened:
+            if open_file_lock:
+                _open_file_safe(session, node_file, open_file_lock, files_opened)
+            elif node_file not in files_opened:
                 session.open_file(node_file)
                 files_opened.add(node_file)
 
@@ -343,6 +358,10 @@ def _run_impact_trace(session, root_item, uri, files_opened, *,
                     continue
                 visited.add(key)
 
+                # Record depth=1 callers for caller_details
+                if depth == 1:
+                    direct_caller_items.append(caller_item)
+
                 entry = _format_caller(caller_item, depth, from_ranges)
                 callers.append(entry)
 
@@ -376,6 +395,7 @@ def _run_impact_trace(session, root_item, uri, files_opened, *,
         "uncovered_references": uncovered,
         "virtual_dispatch": virtual_dispatch,
         "is_virtual_override": is_virtual_override,
+        "direct_caller_items": direct_caller_items,
         "stats": {
             "depth_reached": depth_reached,
             "total_callers": len(callers),
@@ -445,6 +465,238 @@ def cmd_impact_analysis(session, args):
     elif only == "virtual-dispatch":
         for key in ("callees", "callers", "uncovered_references", "stats"):
             result.pop(key, None)
+
+    return result
+
+
+def _get_hover_text(session, uri, line, col):
+    """Get hover text at a position. Returns str or None."""
+    try:
+        hover = session.client.request("textDocument/hover", {
+            "textDocument": {"uri": uri},
+            "position": {"line": line, "character": col},
+        }, timeout=session.timeout)
+        if hover and hover.get("contents"):
+            contents = hover["contents"]
+            if isinstance(contents, dict):
+                return contents.get("value", str(contents))
+            elif isinstance(contents, str):
+                return contents
+            elif isinstance(contents, list):
+                return "\n".join(
+                    c.get("value", str(c)) if isinstance(c, dict) else str(c)
+                    for c in contents
+                )
+    except Exception:
+        pass
+    return None
+
+
+def _get_definition_location(session, uri, line, col):
+    """Get definition location. Returns formatted location dict or None."""
+    try:
+        defn = session.client.request("textDocument/definition", {
+            "textDocument": {"uri": uri},
+            "position": {"line": line, "character": col},
+        }, timeout=session.timeout)
+        locs = normalize_locations(defn)
+        if locs:
+            return format_location(locs[0])
+    except Exception:
+        pass
+    return None
+
+
+def _get_caller_detail(session, caller_item, open_file_lock, files_opened):
+    """Get hover + callees for a single caller item."""
+    caller_formatted = format_hierarchy_item(caller_item)
+    caller_pos = caller_item.get("selectionRange", caller_item.get("range", {})).get("start", {})
+    caller_file = uri_to_path(caller_item["uri"])
+    caller_line = caller_pos.get("line", 0)
+    caller_col = caller_pos.get("character", 0)
+
+    # Ensure file is open
+    _open_file_safe(session, caller_file, open_file_lock, files_opened)
+    caller_uri = path_to_uri(caller_file)
+
+    hover_text = _get_hover_text(session, caller_uri, caller_line, caller_col)
+
+    callees = []
+    try:
+        prepare_items = session.client.request("textDocument/prepareCallHierarchy", {
+            "textDocument": {"uri": caller_uri},
+            "position": {"line": caller_line, "character": caller_col},
+        }, timeout=session.timeout)
+        if prepare_items:
+            if not isinstance(prepare_items, list):
+                prepare_items = [prepare_items]
+            outgoing = session.client.request("callHierarchy/outgoingCalls",
+                                              {"item": prepare_items[0]}, timeout=session.timeout) or []
+            for call in outgoing:
+                callees.append(format_hierarchy_item(call["to"]))
+    except Exception:
+        pass
+
+    return {
+        "caller": caller_formatted,
+        "hover": hover_text,
+        "callees": callees,
+    }
+
+
+def _get_type_hierarchy(session, uri, line, col, direction):
+    """Get type hierarchy in the given direction ('supertypes' or 'subtypes')."""
+    try:
+        items = session.client.request("textDocument/prepareTypeHierarchy", {
+            "textDocument": {"uri": uri},
+            "position": {"line": line, "character": col},
+        }, timeout=session.timeout)
+        if not items:
+            return []
+        if not isinstance(items, list):
+            items = [items]
+        method = "typeHierarchy/supertypes" if direction == "supertypes" else "typeHierarchy/subtypes"
+        result = session.client.request(method, {"item": items[0]}, timeout=session.timeout) or []
+        return [format_hierarchy_item(item) for item in result]
+    except Exception:
+        return []
+
+
+def cmd_investigate(session, args):
+    max_depth = getattr(args, "max_depth", 5) or 5
+    max_nodes = getattr(args, "max_nodes", 100) or 100
+    no_virtual = getattr(args, "no_virtual", False)
+    no_callees = getattr(args, "no_callees", False)
+    no_caller_details = getattr(args, "no_caller_details", False)
+    no_type_hierarchy = getattr(args, "no_type_hierarchy", False)
+
+    # --only / --no-* conflict check
+    only_raw = getattr(args, "only", None)
+    only_set = set(only_raw.split(",")) if only_raw else None
+    if only_set:
+        _VALID = {"callers", "callees", "virtual-dispatch", "caller-details", "type-hierarchy"}
+        invalid = only_set - _VALID
+        if invalid:
+            return {"error": True,
+                    "message": f"Invalid --only value(s): {', '.join(sorted(invalid))}. "
+                               f"Must be from: {', '.join(sorted(_VALID))}"}
+        if no_virtual or no_callees or no_caller_details or no_type_hierarchy:
+            return {"error": True,
+                    "message": "--only and --no-* options cannot be used together"}
+
+    def _want(section):
+        return only_set is None or section in only_set
+
+    # Phase 1: Root resolution
+    uri = session.open_file(args.file)
+    root_items = _prepare_call_hierarchy_with_fallback(
+        session, uri, args.file, args.line, args.column, session.timeout)
+    if not root_items:
+        return {"found": False, "message": "No call hierarchy available at this position"}
+    root_item = root_items[0]
+    root_formatted = format_hierarchy_item(root_item)
+
+    root_pos = root_item.get("selectionRange", root_item.get("range", {})).get("start", {})
+    resolved_line = root_pos.get("line", args.line)
+    resolved_col = root_pos.get("character", args.column)
+
+    files_opened = {args.file}
+    open_file_lock = threading.Lock()
+
+    # Phase 2: Basic info (hover, definition) in parallel with BFS trace
+    hover_text = None
+    definition = None
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        hover_f = pool.submit(_get_hover_text, session, uri, resolved_line, resolved_col)
+        defn_f = pool.submit(_get_definition_location, session, uri, resolved_line, resolved_col)
+
+        # BFS trace runs sequentially (frontier-dependent) but in the same pool context
+        # We map --only sections to the impact_analysis --only for the trace
+        trace_only = None
+        if only_set:
+            # Map investigate sections to impact trace sections
+            trace_sections = only_set & {"callers", "callees", "virtual-dispatch"}
+            if len(trace_sections) == 1:
+                trace_only = next(iter(trace_sections))
+
+        trace = _run_impact_trace(
+            session, root_item, uri, files_opened,
+            max_depth=max_depth, max_nodes=max_nodes,
+            no_virtual=no_virtual,
+            no_callees=no_callees,
+            open_file_lock=open_file_lock,
+        )
+
+        hover_text = hover_f.result()
+        definition = defn_f.result()
+
+    # Phase 3: Extended info (caller_details, type_hierarchy) in parallel
+    caller_details = None
+    type_hierarchy = None
+
+    want_caller_details = _want("caller-details") and not no_caller_details
+    want_type_hierarchy = _want("type-hierarchy") and not no_type_hierarchy
+
+    if want_caller_details or want_type_hierarchy:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            detail_futures = []
+            if want_caller_details and trace["direct_caller_items"]:
+                for item in trace["direct_caller_items"]:
+                    detail_futures.append(
+                        pool.submit(_get_caller_detail, session, item, open_file_lock, files_opened))
+
+            super_f = None
+            sub_f = None
+            if want_type_hierarchy:
+                super_f = pool.submit(_get_type_hierarchy, session, uri, resolved_line, resolved_col, "supertypes")
+                sub_f = pool.submit(_get_type_hierarchy, session, uri, resolved_line, resolved_col, "subtypes")
+
+            if detail_futures:
+                caller_details = [f.result() for f in detail_futures]
+
+            if super_f is not None:
+                supertypes = super_f.result()
+                subtypes = sub_f.result()
+                if supertypes or subtypes:
+                    type_hierarchy = {"supertypes": supertypes, "subtypes": subtypes}
+
+    # Phase 4: Assemble result
+    result = {
+        "found": True,
+        "root": root_formatted,
+        "hover": hover_text,
+        "definition": definition,
+        "callers": trace["callers"],
+        "callees": trace["callees"],
+        "uncovered_references": trace["uncovered_references"],
+        "virtual_dispatch": trace["virtual_dispatch"],
+        "caller_details": caller_details,
+        "type_hierarchy": type_hierarchy,
+        "stats": {
+            **trace["stats"],
+            "total_caller_details": len(caller_details) if caller_details else 0,
+        },
+    }
+
+    if trace["is_virtual_override"]:
+        result["is_virtual_override"] = True
+
+    # --only filtering: remove sections not requested
+    if only_set:
+        _SECTION_KEYS = {
+            "callers": {"callers", "uncovered_references"},
+            "callees": {"callees"},
+            "virtual-dispatch": {"virtual_dispatch", "is_virtual_override"},
+            "caller-details": {"caller_details"},
+            "type-hierarchy": {"type_hierarchy"},
+        }
+        keep_keys = {"found", "root", "hover", "definition", "stats"}
+        for section in only_set:
+            keep_keys.update(_SECTION_KEYS.get(section, set()))
+        for key in list(result.keys()):
+            if key not in keep_keys:
+                del result[key]
 
     return result
 
