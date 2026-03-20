@@ -15,6 +15,7 @@ FILES = [
     (".claude/rules/cpp-navigation.md", "claude-rules-cpp-nav.md"),
     (".claude/skills/clangd-cli/SKILL.md", "claude-skill.md"),
     (".claude/skills/clangd-cli/reference.md", "claude-skill-reference.md"),
+    (".claude/skills/clangd-cli/investigation-workflow.md", "claude-skill-investigation.md"),
     (".github/instructions/cpp-navigation.instructions.md", "copilot-cpp-nav.md"),
 ]
 
@@ -37,6 +38,7 @@ CLAUDE_PERMISSIONS = [
     "Bash(jq *)",
     "Bash(date *)",
     "Bash(cat *)",
+    "Bash(echo *)",
     "Skill(clangd-cli)",
     "Skill(clangd-cli:*)",
 ]

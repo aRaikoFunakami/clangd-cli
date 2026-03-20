@@ -1,18 +1,7 @@
 ---
 name: clangd-cli
-description: Analyze C++ code impact, trace callers, find virtual method overrides, and navigate symbols using clangd semantic analysis. Use when asked to understand call chains, analyze modification impact, find implementations of an interface, or resolve type hierarchies in C++ codebases.
-allowed-tools:
-  - Bash(clangd-cli *)
-  - Bash(clangd-cli * 2>/dev/null)
-  - Bash(clangd-cli *|jq *)
-  - Bash(clangd-cli * 2>/dev/null|jq *)
-  - Bash(clangd-cli *|head *)
-  - Bash(clangd-cli * 2>/dev/null|head *)
-  - Bash(clangd-cli *|grep *)
-  - Bash(clangd-cli * 2>/dev/null|grep *)
-  - Bash(jq *)
-  - Bash(date *)
-  - Bash(cat *)
+description: Analyze C++ code impact, trace callers, find virtual method overrides, and navigate symbols using clangd semantic analysis. Use when asked to understand call chains, analyze modification impact, find implementations of an interface, resolve type hierarchies, or conduct structured impact investigation (影響範囲調査) in C++ codebases.
+allowed-tools: Bash(clangd-cli *), Bash(clangd-cli * 2>/dev/null), Bash(clangd-cli *|jq *), Bash(clangd-cli * 2>/dev/null|jq *), Bash(clangd-cli *|head *), Bash(clangd-cli * 2>/dev/null|head *), Bash(clangd-cli *|grep *), Bash(clangd-cli * 2>/dev/null|grep *), Bash(jq *), Bash(date *), Bash(cat *), Bash(echo *)
 ---
 
 # C++ Semantic Navigation
@@ -25,6 +14,8 @@ Use this skill when asked to:
 - Trace call chains through the codebase
 - Find all implementations of a virtual method
 - Understand class hierarchies
+- Conduct structured impact investigation for a C++ code change (影響範囲調査)
+- Generate an impact analysis report (影響範囲調査報告書)
 
 ## Quick start
 
@@ -120,6 +111,14 @@ clangd-cli --compact impact-analysis --file F --line L --col C
 ```
 
 **Do not use Read** to view large JSON output directly — pipe through `jq` or use `--only`.
+
+## Structured impact investigation (影響範囲調査)
+
+When asked to perform a structured impact analysis or generate an impact report:
+→ Follow the workflow in [investigation-workflow.md](investigation-workflow.md)
+
+Scope: 区分A (code dependency) + 区分B (C++ specific) only.
+Out of scope: 区分C (non-code impact), report item 7 (retest targets).
 
 ## Examples
 
