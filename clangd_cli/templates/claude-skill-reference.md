@@ -33,6 +33,36 @@ clangd-cli impact-analysis --file F --line L --col C [options]
 | `--no-callees` | Skip outgoing callees from root |
 | `--only SECTION` | Output only specified section (`callers`\|`callees`\|`virtual-dispatch`). Cannot combine with `--no-*` |
 
+### investigate
+Comprehensive symbol investigation: callers (recursive BFS), callees, virtual dispatch, type hierarchy, and per-caller details (hover + callees) in a single command.
+```
+clangd-cli investigate --file F --line L --col C [options]
+```
+| Option | Description |
+|--------|-------------|
+| `--max-depth N` | Maximum BFS depth (default: 5) |
+| `--max-nodes N` | Maximum number of caller nodes (default: 100) |
+| `--no-virtual` | Skip virtual dispatch exploration |
+| `--no-callees` | Skip outgoing callees from root |
+| `--no-caller-details` | Skip detailed info for each direct caller (hover + callees) |
+| `--no-type-hierarchy` | Skip type hierarchy (supertypes/subtypes) |
+| `--only SECTION` | Output only specified sections (comma-separated: `callers`\|`callees`\|`virtual-dispatch`\|`caller-details`\|`type-hierarchy`). Cannot combine with `--no-*` |
+
+Output fields (success):
+| Field | Type | Description |
+|-------|------|-------------|
+| `root` | HierarchyItem | Root symbol (name, kind, location) |
+| `hover` | string\|null | Hover info (type signature, docs) |
+| `definition` | Location\|null | Definition location |
+| `callers` | CallerItem[] | Recursive callers with `depth` and `call_sites` |
+| `callees` | HierarchyItem[] | Direct callees from root |
+| `uncovered_references` | UncoveredRef[] | References not covered by caller trace |
+| `virtual_dispatch` | object\|null | `base_method`, `dispatch_callers`, `sibling_overrides` |
+| `caller_details` | CallerDetail[]\|null | Per-caller hover + callees (depth=1 only) |
+| `type_hierarchy` | object\|null | `supertypes`, `subtypes` |
+| `stats` | InvestigateStats | `depth_reached`, `total_callers`, `total_callees`, `total_references`, `total_caller_details`, `truncated`, `files_opened` |
+| `is_virtual_override` | boolean\|null | Whether root is a virtual override |
+
 ### describe
 Symbol overview: type, references, callers, callees.
 ```

@@ -23,10 +23,11 @@ Use this skill when asked to:
 # 1. Find the symbol's exact location
 clangd-cli workspace-symbols --query "HandleEvent"
 
-# 2. Analyze its impact (callers, callees, virtual dispatch)
-clangd-cli impact-analysis --file /abs/path/handler.cpp --line 42 --col 8
+# 2. Comprehensive investigation (callers, callees, virtual dispatch, type hierarchy)
+clangd-cli investigate --file /abs/path/handler.cpp --line 42 --col 8
 
-# 3. Get a symbol overview
+# 3. Or use targeted commands for specific needs
+clangd-cli impact-analysis --file /abs/path/handler.cpp --line 42 --col 8
 clangd-cli describe --file /abs/path/handler.cpp --line 42 --col 8 --only hover,callers
 
 # 4. Find all overrides of a virtual method
@@ -60,6 +61,8 @@ Different fields use different types (e.g. `base_method` is a bare `Location` wi
 - Do NOT use Grep to find a symbol's definition location — Grep lacks column info, leading to `--col 0` and slow fallback resolution
 
 ### Structural / semantic queries (always use clangd-cli)
+- Comprehensive investigation (callers + callees + virtual dispatch + type hierarchy + caller details):
+  `clangd-cli investigate --file F --line L --col C`
 - Impact analysis / caller trace:
   `clangd-cli impact-analysis --file F --line L --col C`
 - Symbol overview (type, callers, callees):
@@ -105,6 +108,28 @@ clangd-cli impact-analysis ... | jq -r '.callers[] | "\(.name) @ \(.location.fil
 
 # describe の hover テキストだけ
 clangd-cli describe ... | jq -r '.hover'
+```
+
+#### `investigate` の大量出力を処理するパターン
+
+`investigate` は全データを一括取得するため、出力が50KB以上になることがある。ファイルに保存してから `jq` で段階的に抽出する：
+
+```bash
+# ファイルに保存して規模を確認
+clangd-cli investigate --file F --line L --col C > investigation-data.json
+jq '.stats' investigation-data.json
+
+# caller数を確認
+jq '.callers | length' investigation-data.json
+
+# depth=1のcallerだけ抽出
+jq '[.callers[] | select(.depth == 1)]' investigation-data.json
+
+# callerを1件ずつ取得
+jq '.callers[0]' investigation-data.json
+
+# caller_detailsを1件ずつ取得（hover + callees）
+jq '.caller_details[0]' investigation-data.json
 ```
 
 ### 3. `--compact` で全体のサイズを半減
